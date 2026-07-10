@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ t('kpi') }}</h1>
+<div class="kpi-grid">
+  <div class="kpi"><div class="value">{{ kpi.total }}</div><div class="label">{{ t('total_wells') }}</div></div>
+  <div class="kpi"><div class="value">{{ kpi.producing }}</div><div class="label">{{ t('producing') }}</div></div>
+  <div class="kpi"><div class="value">{{ kpi.injection }}</div><div class="label">{{ t('injection') }}</div></div>
+  <div class="kpi ok"><div class="value">{{ kpi.in_operation }}</div><div class="label">{{ t('in_operation') }}</div></div>
+  <div class="kpi warn"><div class="value">{{ kpi.stopped }}</div><div class="label">{{ t('stopped') }}</div></div>
+  <div class="kpi bad"><div class="value">{{ kpi.offline }}</div><div class="label">{{ t('offline_devices') }}</div></div>
+  <div class="kpi"><div class="value">{{ kpi.prev_day_total }}</div><div class="label">{{ t('prev_day_rate') }}, м³</div></div>
+</div>
+
+<h2>{{ t('rate_drop') }} (≥ 30% / 4h)</h2>
+{% if drops %}
+<table>
+  <tr><th>{{ t('well') }}</th><th>ГЗУ</th><th>ЦДН</th><th>%</th></tr>
+  {% for d in drops %}
+  <tr class="drop-row">
+    <td><a href="/wells/{{ d.well.id }}">{{ d.well.number }}</a></td>
+    <td>{{ d.well.gzu.name }}</td>
+    <td>{{ d.well.gzu.cdn.name }}</td>
+    <td class="bad-text">−{{ d.drop }}%</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">—</p>{% endif %}
+{% endblock %}

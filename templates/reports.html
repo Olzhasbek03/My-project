@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ t('reports') }}</h1>
+<div class="cards">
+  <div class="card">
+    <h3>{{ t('four_hour_report') }}</h3>
+    <p class="muted">RU / EN / 中文 · .xlsx</p>
+    <a class="btn" href="/reports/4h.xlsx">⬇ {{ t('download') }}</a>
+  </div>
+  <div class="card">
+    <h3>{{ t('daily_report') }}</h3>
+    <p class="muted">RU / EN / 中文 · .xlsx</p>
+    <a class="btn" href="/reports/daily.xlsx">⬇ {{ t('download') }}</a>
+  </div>
+  {% if user.role == 'admin' %}
+  <div class="card">
+    <h3>{{ t('validation_report') }}</h3>
+    <p class="muted">RU / EN / 中文 · .xlsx</p>
+    <a class="btn" href="/reports/validation.xlsx">⬇ {{ t('download') }}</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

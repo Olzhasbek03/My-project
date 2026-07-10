@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ t('wells') }}</h1>
+  <a class="btn" href="/wells/export.xlsx">⬇ {{ t('export_excel') }}</a>
+</div>
+<table>
+  <tr>
+    <th>{{ t('well') }}</th><th>ГЗУ</th><th>ЦДН</th><th>{{ t('fund') }}</th>
+    <th>{{ t('meter_type') }}</th><th>{{ t('last_reading') }}, м³/сут</th>
+    <th>{{ t('measured_at') }}</th><th>{{ t('received_at') }}</th>
+    <th>{{ t('prev_day_rate') }}, м³</th><th>{{ t('status') }}</th>
+  </tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/wells/{{ r.well.id }}">{{ r.well.number }}</a></td>
+    <td>{{ r.well.gzu.name }}</td>
+    <td>{{ r.well.gzu.cdn.name }}</td>
+    <td>{{ t(r.well.fund) if r.well.fund in ('producing','injection','idle') else r.well.fund }}</td>
+    <td>{{ r.well.meter_type }}</td>
+    <td>{{ '%.1f'|format(r.last.flow_rate) if r.last else '—' }}</td>
+    <td>{{ r.last.measured_at.strftime('%d.%m.%Y %H:%M') if r.last else '—' }}</td>
+    <td>{{ r.last.received_at.strftime('%d.%m.%Y %H:%M') if r.last else '—' }}</td>
+    <td>{{ r.prev_day }}</td>
+    <td><span class="status {{ r.status }}">{{ t(r.status) }}</span></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

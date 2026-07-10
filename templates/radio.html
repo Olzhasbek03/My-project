@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ t('radio') }} — LoRaWAN</h1>
+
+<h2>a) {{ t('rssi_by_gw') }}</h2>
+<div class="bars">
+  {% for s in gw_stats %}
+  <div class="bar-wrap">
+    <div class="bar rssi" style="height: {{ ((s.avg_rssi + 150) / 60 * 120) | round | int if s.frames else 2 }}px"
+         title="RSSI {{ s.avg_rssi }} dBm, SNR {{ s.avg_snr }} dB"></div>
+    <div class="bar-value">{{ s.avg_rssi if s.frames else '—' }}</div>
+    <div class="bar-label">{{ s.name }}<br><small>{{ s.frames }} pkt · SNR {{ s.avg_snr }}</small></div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>b) {{ t('worst_gw') }}</h2>
+<table>
+  <tr><th>#</th><th>{{ t('gateway') }}</th><th>RSSI, dBm</th><th>SNR, dB</th><th>Frames / 24h</th></tr>
+  {% for s in worst %}
+  <tr><td>{{ loop.index }}</td><td>{{ s.name }}</td><td>{{ s.avg_rssi }}</td><td>{{ s.avg_snr }}</td><td>{{ s.frames }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>c) {{ t('wrong_gw') }}</h2>
+{% if wrong_gw %}
+<table>
+  <tr><th>DevEUI</th><th>{{ t('well') }}</th><th>{{ t('gateway') }} (факт)</th><th>км</th>
+      <th>{{ t('gateway') }} (ближайшая)</th><th>км</th></tr>
+  {% for r in wrong_gw %}
+  <tr><td>{{ r.dev_eui }}</td><td>{{ r.well }}</td><td>{{ r.used_gateway }}</td>
+      <td>{{ r.used_distance_km }}</td><td>{{ r.nearest_gateway }}</td><td>{{ r.nearest_distance_km }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">—</p>{% endif %}
+
+<h2>d) {{ t('weak_zones') }} (RSSI &lt; −120 dBm)</h2>
+{% if weak_zones %}
+<table>
+  <tr><th>DevEUI</th><th>{{ t('well') }}</th><th>RSSI, dBm</th></tr>
+  {% for z in weak_zones %}
+  <tr><td>{{ z.dev_eui }}</td><td>{{ z.well }}</td><td class="bad-text">{{ z.avg_rssi }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">—</p>{% endif %}
+
+<h2>e) {{ t('empty_packets') }}</h2>
+{% if empty %}
+<table>
+  <tr><th>DevEUI</th><th>{{ t('well') }}</th><th>Count / 24h</th></tr>
+  {% for r in empty %}
+  <tr><td>{{ r.dev_eui }}</td><td>{{ r.well }}</td><td>{{ r.count }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">—</p>{% endif %}
+
+<h2>f) {{ t('distance') }}</h2>
+<table>
+  <tr><th>DevEUI</th><th>{{ t('well') }}</th><th>{{ t('gateway') }}</th><th>км</th><th>RSSI</th></tr>
+  {% for r in distances %}
+  <tr><td>{{ r.dev_eui }}</td><td>{{ r.well }}</td><td>{{ r.gateway_id }}</td>
+      <td>{{ r.distance_km }}</td><td>{{ r.rssi }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

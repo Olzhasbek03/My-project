@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ t('admin') }}</h1>
+
+<h2>{{ t('users') }}</h2>
+<table>
+  <tr><th>{{ t('username') }}</th><th>ФИО</th><th>Email</th><th>{{ t('role') }}</th>
+      <th>{{ t('scope') }}</th><th>{{ t('email_recipients') }}</th><th>{{ t('actions') }}</th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.email }}</td><td>{{ u.role }}</td>
+    <td>
+      {% for s in u.scope %}{{ s.level }}:{{ s.object_id }} {% endfor %}
+      {% if u.role == 'admin' %}{{ t('all') }}{% endif %}
+    </td>
+    <td>{{ '✓' if u.receive_reports }}</td>
+    <td>
+      <form method="post" action="/admin/users/{{ u.id }}/toggle" class="inline-form">
+        <button type="submit">{{ '⏸' if u.is_active else '▶' }}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<details class="panel">
+  <summary>+ {{ t('users') }}</summary>
+  <form method="post" action="/admin/users" class="grid-form">
+    <label>{{ t('username') }}<input name="username" required></label>
+    <label>ФИО<input name="full_name"></label>
+    <label>Email<input name="email" type="email"></label>
+    <label>{{ t('password') }}<input name="password" type="password" required></label>
+    <label>{{ t('role') }}
+      <select name="role">
+        <option value="gzu">ГЗУ</option>
+        <option value="cdn">ЦДН</option>
+        <option value="admin">admin</option>
+      </select>
+    </label>
+    <label>ГЗУ
+      <select name="scope_gzu" multiple size="4">
+        {% for g in gzus %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>ЦДН
+      <select name="scope_cdn" multiple size="3">
+        {% for c in cdns %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><input type="checkbox" name="receive_reports" value="true"> {{ t('email_recipients') }}</label>
+    <button type="submit">{{ t('save') }}</button>
+  </form>
+</details>
+
+<h2>{{ t('well_mgmt') }}</h2>
+<details class="panel">
+  <summary>+ {{ t('add_well') }}</summary>
+  <form method="post" action="/admin/wells" class="grid-form">
+    <label>{{ t('well') }} №<input name="number" required></label>
+    <label>ГЗУ
+      <select name="gzu_id">
+        {% for g in gzus %}<option value="{{ g.id }}">{{ g.name }} ({{ g.cdn.name }})</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ t('fund') }}
+      <select name="fund">
+        <option value="producing">{{ t('producing') }}</option>
+        <option value="injection">{{ t('injection') }}</option>
+        <option value="idle">{{ t('idle') }}</option>
+      </select>
+    </label>
+    <label>{{ t('meter_type') }}
+      <select name="meter_type">
+        {% for mt in meter_types %}<option>{{ mt }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Lat<input name="latitude" type="number" step="0.000001" value="0"></label>
+    <label>Lon<input name="longitude" type="number" step="0.000001" value="0"></label>
+    <label>DevEUI<input name="dev_eui" placeholder="0011223344556677"></label>
+    <button type="submit">{{ t('save') }}</button>
+  </form>
+</details>
+
+<table>
+  <tr><th>{{ t('well') }}</th><th>ГЗУ</th><th>{{ t('fund') }}</th>
+      <th>{{ t('meter_type') }}</th><th>{{ t('water_cut') }}</th><th>Опрос</th><th></th></tr>
+  {% for w in wells %}
+  <tr>
+    <form method="post" action="/admin/wells/{{ w.id }}">
+    <td>{{ w.number }}</td>
+    <td>{{ w.gzu.name }}</td>
+    <td>
+      <select name="fund">
+        <option value="producing" {{ 'selected' if w.fund == 'producing' }}>{{ t('producing') }}</option>
+        <option value="injection" {{ 'selected' if w.fund == 'injection' }}>{{ t('injection') }}</option>
+        <option value="idle" {{ 'selected' if w.fund == 'idle' }}>{{ t('idle') }}</option>
+      </select>
+    </td>
+    <td>
+      <select name="meter_type">
+        {% for mt in meter_types %}<option {{ 'selected' if w.meter_type == mt }}>{{ mt }}</option>{% endfor %}
+      </select>
+    </td>
+    <td><input name="water_cut_pct" type="number" step="0.1" value="{{ w.water_cut_pct }}" class="narrow"></td>
+    <td><input type="checkbox" name="is_active" value="true" {{ 'checked' if w.is_active }}></td>
+    <td><button type="submit">{{ t('save') }}</button></td>
+    </form>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>{{ t('devices') }} — {{ t('interval') }} / {{ t('registers') }}</h2>
+<table>
+  <tr><th>DevEUI</th><th>{{ t('well') }}</th><th>{{ t('battery') }}</th>
+      <th>{{ t('interval') }}</th><th>{{ t('registers') }}</th><th></th></tr>
+  {% for d in devices %}
+  <tr>
+    <form method="post" action="/admin/devices/{{ d.id }}">
+    <td>{{ d.dev_eui }}</td>
+    <td>{{ d.well.number if d.well else '—' }}</td>
+    <td>{{ d.battery_v }}</td>
+    <td><input name="report_interval_sec" type="number" min="1" max="36000"
+               value="{{ d.report_interval_sec }}" class="narrow"></td>
+    <td><input name="modbus_registers" value="{{ d.modbus_registers }}"
+               placeholder="30001,30002"></td>
+    <td><button type="submit">{{ t('save') }}</button></td>
+    </form>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>{{ t('report_schedule') }} · SCADA</h2>
+<form method="post" action="/admin/settings" class="grid-form panel">
+  <label>{{ t('daily_report') }} (UTC)<input name="daily_report_time" value="{{ daily_report_time }}" pattern="\d\d:\d\d"></label>
+  <label>{{ t('validation_report') }} (UTC)<input name="validation_report_time" value="{{ validation_report_time }}" pattern="\d\d:\d\d"></label>
+  <label>SCADA Modbus TCP<input name="scada_modbus_endpoint" value="{{ scada_modbus }}" placeholder="10.0.0.5:502"></label>
+  <label>SCADA OPC UA<input name="scada_opcua_endpoint" value="{{ scada_opcua }}" placeholder="opc.tcp://10.0.0.5:4840"></label>
+  <button type="submit">{{ t('save') }}</button>
+</form>
+{% endblock %}

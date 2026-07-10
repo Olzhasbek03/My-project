@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ t('well') }} {{ well.number }}
+    <span class="status {{ status }}">{{ t(status) }}</span></h1>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3>{{ t('last_reading') }}</h3>
+    <p class="big">{{ '%.1f'|format(last.flow_rate) if last else '—' }} м³/сут</p>
+    <p class="muted">{{ t('measured_at') }}: {{ last.measured_at.strftime('%d.%m.%Y %H:%M') if last else '—' }}<br>
+       {{ t('received_at') }}: {{ last.received_at.strftime('%d.%m.%Y %H:%M') if last else '—' }}</p>
+  </div>
+  <div class="card">
+    <h3>{{ t('prev_day_rate') }}</h3>
+    <p class="big">{{ prev_day }} м³</p>
+    <p class="muted">ГЗУ: {{ well.gzu.name }} · ЦДН: {{ well.gzu.cdn.name }}<br>
+      {{ t('meter_type') }}: {{ well.meter_type }} · {{ t('water_cut') }}: {{ well.water_cut_pct }}</p>
+  </div>
+</div>
+
+<h2>{{ t('four_hour') }}</h2>
+<div class="bars">
+  {% set maxv = (four_hours | map(attribute=1) | max) or 1 %}
+  {% for (interval, v) in four_hours %}
+  <div class="bar-wrap">
+    <div class="bar" style="height: {{ (v / maxv * 120) | round | int if maxv else 0 }}px"></div>
+    <div class="bar-value">{{ v }}</div>
+    <div class="bar-label">{{ interval[0].strftime('%H:%M') }}–{{ interval[1].strftime('%H:%M') }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>{{ t('comments') }}</h2>
+<form method="post" action="/wells/{{ well.id }}/comments" class="inline-form">
+  <input name="text" placeholder="{{ t('add_comment') }}" required>
+  <button type="submit">{{ t('add_comment') }}</button>
+</form>
+{% if comments %}
+<table>
+  <tr><th>{{ t('date') }}</th><th>{{ t('author') }}</th><th></th></tr>
+  {% for c in comments %}
+  <tr><td>{{ c.created_at.strftime('%d.%m.%Y %H:%M') }}</td><td>{{ c.author }}</td><td>{{ c.text }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>{{ t('archive') }}</h2>
+<table>
+  <tr><th>{{ t('measured_at') }}</th><th>{{ t('received_at') }}</th>
+      <th>м³/сут</th><th>Σ м³</th><th>P</th><th>T</th><th>⚠</th></tr>
+  {% for m in history %}
+  <tr>
+    <td>{{ m.measured_at.strftime('%d.%m.%Y %H:%M') }}</td>
+    <td>{{ m.received_at.strftime('%d.%m.%Y %H:%M') }}</td>
+    <td>{{ '%.1f'|format(m.flow_rate) }}</td>
+    <td>{{ '%.1f'|format(m.cumulative_total) }}</td>
+    <td>{{ '%.1f'|format(m.pressure) if m.pressure is not none else '—' }}</td>
+    <td>{{ '%.1f'|format(m.temperature) if m.temperature is not none else '—' }}</td>
+    <td>{{ '⚠' if m.alarm }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
