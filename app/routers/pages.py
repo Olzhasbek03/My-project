@@ -46,7 +46,7 @@ def logout():
 def set_language(lang: str, request: Request):
     resp = RedirectResponse(request.headers.get("referer", "/home"), status_code=303)
     if lang in config.LANGUAGES:
-        resp.set_cookie("optiwell_lang", lang, max_age=365 * 24 * 3600)
+        resp.set_cookie("site_lang", lang, max_age=365 * 24 * 3600)
     return resp
 
 
@@ -193,7 +193,7 @@ def wells_export(db: Session = Depends(get_db),
     return Response(
         data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=optiwell_wells.xlsx"})
+        headers={"Content-Disposition": "attachment; filename=wells.xlsx"})
 
 
 @router.get("/wells/{well_id}", response_class=HTMLResponse)
@@ -285,7 +285,7 @@ def report_4h(db: Session = Depends(get_db),
     return Response(
         reports.wells_report(db, user, 4),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=optiwell_4h_{stamp}.xlsx"})
+        headers={"Content-Disposition": f"attachment; filename=report_4h_{stamp}.xlsx"})
 
 
 @router.get("/reports/daily.xlsx")
@@ -295,7 +295,7 @@ def report_daily(db: Session = Depends(get_db),
     return Response(
         reports.wells_report(db, user, 24),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=optiwell_daily_{stamp}.xlsx"})
+        headers={"Content-Disposition": f"attachment; filename=report_daily_{stamp}.xlsx"})
 
 
 @router.get("/reports/validation.xlsx")
@@ -306,4 +306,4 @@ def report_validation(db: Session = Depends(get_db),
         reports.validation_report(db),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition":
-                 f"attachment; filename=optiwell_validation_{stamp}.xlsx"})
+                 f"attachment; filename=report_validation_{stamp}.xlsx"})

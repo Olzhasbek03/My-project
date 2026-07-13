@@ -10,7 +10,7 @@ import logging
 from .database import SessionLocal
 from . import emailer, services
 
-log = logging.getLogger("optiwell.scheduler")
+log = logging.getLogger("wellapp.scheduler")
 
 CHECK_INTERVAL_SEC = 60
 

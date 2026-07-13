@@ -1,4 +1,4 @@
-# Optiwell — программный комплекс мониторинга, анализа и оптимизации скважин
+# Программный комплекс мониторинга, анализа и оптимизации скважин
 
 Реализация программного комплекса по технической спецификации «Услуги по
 передаче и сбору данных со скважин» (месторождение Каражанбас, Мангистауская
@@ -9,11 +9,11 @@
 
 ```bash
 pip install -r requirements.txt
-python -m app.import_csv                             # реальный фонд из data/Optiwell_Cloud.csv
+python -m app.import_csv                             # реальный фонд из data/wells_export.csv
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Импортёр загружает экспорт Optiwell Cloud (2420 скважин, 31 ГЗУ) и создаёт
+Импортёр загружает CSV-экспорт фонда скважин (2420 скважин, 31 ГЗУ) и создаёт
 администратора `admin/admin`. Альтернатива для демонстрации иерархии прав —
 синтетические данные: `python -m app.seed` (пользователи `admin/admin`,
 `cdn1/cdn1`, `gzu11/gzu11`).
@@ -44,7 +44,7 @@ python -m app.import_csv путь/к/новому_экспорту.csv
 | Пункт ТЗ | Требование | Реализация |
 |---|---|---|
 | 2.1.3.1 | Сбор данных со скважинного оборудования по LoRaWAN (расходомеры СКЖ/БЭСКЖ-2М, КССЖ, NuFlo MC-II/MC-III, датчики P/T, дискретные сигналы БУС, до 10 регистров 16-bit ЧРП/ИСУ по Modbus RTU) | `POST /api/uplink` — HTTP-интеграция ChirpStack v3 (`app/routers/api.py`), декодер бинарной полезной нагрузки терминала |
-| 2.1.3.2 | Серверная инфраструктура: ChirpStack v3.16.106, PostgreSQL/ClickHouse/MS SQL | SQLAlchemy: строка подключения задаётся `OPTIWELL_DATABASE_URL` (по умолчанию SQLite для разработки, поддерживаются PostgreSQL/MS SQL); приём событий "up" ChirpStack v3 |
+| 2.1.3.2 | Серверная инфраструктура: ChirpStack v3.16.106, PostgreSQL/ClickHouse/MS SQL | SQLAlchemy: строка подключения задаётся `WELLAPP_DATABASE_URL` (по умолчанию SQLite для разработки, поддерживаются PostgreSQL/MS SQL); приём событий "up" ChirpStack v3 |
 | 2.1.3.3 | Веб-интерфейс без клиентских приложений, языки KK/RU/EN/ZH, дашборд КПЭ, фонд скважин, показания и времена опроса/получения, дебит за сутки и по 4-часовым интервалам, архив, карта со статусами, комментарии с историей, экспорт в Excel, админ-вкладки (пользователи и права, фонд и оборудование, настройка сбора, расписание отчётов) | страницы `/home`, `/wells`, `/wells/{id}`, `/map`, `/admin`; переключатель языков в шапке; экспорт `/wells/export.xlsx` |
 | 2.1.3.4 | Самостоятельный модуль радиоанализа LoRaWAN (не средствами ChirpStack), языки KK/EN/RU: a) сигнал/помехи по БС; b) ранжирование худших БС; c) терминалы не на ближайшей БС; d) зоны слабого сигнала; e) пустые пакеты; f) расстояние терминал–БС | отдельный модуль `app/radio.py` поверх собственной таблицы uplink-кадров, интерфейс `/radio` (пп. a–f) |
 | 2.1.3.5 | Отчёты .xls на ZH/EN/RU: четырёхчасовые и суточные (дебит вкл. нулевой, состояние, значительное снижение дебита за 4 ч), рассылка по зоне ответственности «скважина–ГЗУ–ЦДН», отдельный суточный отчёт валидации и оффлайн-передатчиков | `app/reports.py` (трёхъязычные заголовки), `app/emailer.py` + планировщик `app/scheduler.py`; время суточной рассылки настраивается администратором |
@@ -84,7 +84,7 @@ static/          стили (без внешних CDN — работает в �
 POST http://<сервер>:8000/api/uplink
 ```
 
-Опционально задайте токен `OPTIWELL_CHIRPSTACK_TOKEN` — тогда запросы должны
+Опционально задайте токен `WELLAPP_CHIRPSTACK_TOKEN` — тогда запросы должны
 содержать заголовок `Authorization: Bearer <токен>`.
 
 Формат полезной нагрузки терминала (little-endian):
@@ -97,18 +97,18 @@ float32 температура | uint8 авария | uint16 батарея, м�
 
 | Переменная | Назначение | По умолчанию |
 |---|---|---|
-| `OPTIWELL_DATABASE_URL` | строка подключения СУБД | `sqlite:///./optiwell.db` |
-| `OPTIWELL_SECRET_KEY` | секрет подписи сессий | заменить в продуктиве |
-| `OPTIWELL_SMTP_HOST/PORT/USER/PASSWORD/FROM` | SMTP-рассылка отчётов | — |
-| `OPTIWELL_CHIRPSTACK_TOKEN` | токен HTTP-интеграции | пусто (без проверки) |
-| `OPTIWELL_OFFLINE_MINUTES` | порог «передатчик оффлайн» | 180 |
-| `OPTIWELL_RATE_DROP_PCT` | порог значительного снижения дебита | 30 |
+| `WELLAPP_DATABASE_URL` | строка подключения СУБД | `sqlite:///./app.db` |
+| `WELLAPP_SECRET_KEY` | секрет подписи сессий | заменить в продуктиве |
+| `WELLAPP_SMTP_HOST/PORT/USER/PASSWORD/FROM` | SMTP-рассылка отчётов | — |
+| `WELLAPP_CHIRPSTACK_TOKEN` | токен HTTP-интеграции | пусто (без проверки) |
+| `WELLAPP_OFFLINE_MINUTES` | порог «передатчик оффлайн» | 180 |
+| `WELLAPP_RATE_DROP_PCT` | порог значительного снижения дебита | 30 |
 
 ## Деплой на Vercel (демо)
 
 Репозиторий готов к деплою: `vercel.json` + ASGI-точка входа `api/index.py`.
 При холодном старте пустая база в `/tmp` автоматически наполняется из
-`data/Optiwell_Cloud.csv`.
+`data/wells_export.csv`.
 
 ```bash
 npm i -g vercel
@@ -121,7 +121,7 @@ vercel --prod
 
 Ограничения serverless-режима (демо): SQLite в `/tmp` эфемерна — комментарии
 и правки админки живут до перезапуска инстанса (для постоянного хранения
-задайте `OPTIWELL_DATABASE_URL` на облачный Postgres, например Neon);
+задайте `WELLAPP_DATABASE_URL` на облачный Postgres, например Neon);
 фоновый планировщик отчётов не работает — рассылка запускается Vercel Cron
 через `GET /api/cron/reports?kind=4h|daily|validation`.
 
@@ -130,8 +130,8 @@ vercel --prod
 Комплекс — одно ASGI-приложение; для продуктива:
 
 ```bash
-OPTIWELL_DATABASE_URL=postgresql+psycopg2://optiwell:***@db:5432/optiwell \
-OPTIWELL_SECRET_KEY=$(openssl rand -hex 32) \
+WELLAPP_DATABASE_URL=postgresql+psycopg2://app:***@db:5432/wells \
+WELLAPP_SECRET_KEY=$(openssl rand -hex 32) \
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 

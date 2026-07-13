@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session
 
 from . import config, models, reports
 
-log = logging.getLogger("optiwell.email")
+log = logging.getLogger("wellapp.email")
 
 
 def _send(to: str, subject: str, body: str,
           attachment: bytes, filename: str) -> bool:
     if not config.SMTP_HOST:
-        log.warning("SMTP не настроен (OPTIWELL_SMTP_HOST); отчёт %s для %s не отправлен",
+        log.warning("SMTP не настроен (WELLAPP_SMTP_HOST); отчёт %s для %s не отправлен",
                     filename, to)
         return False
     msg = EmailMessage()
@@ -59,10 +59,10 @@ def send_periodic_reports(db: Session, period_hours: int) -> int:
         data = reports.wells_report(db, user, period_hours)
         ok = _send(
             user.email,
-            f"Optiwell: {'четырёхчасовой' if period_hours == 4 else 'суточный'} отчёт {stamp}",
-            "Автоматический отчёт системы мониторинга скважин Optiwell.",
+            f"Мониторинг скважин: {'четырёхчасовой' if period_hours == 4 else 'суточный'} отчёт {stamp}",
+            "Автоматический отчёт системы мониторинга скважин.",
             data,
-            f"optiwell_{kind}_{stamp}.xlsx",
+            f"report_{kind}_{stamp}.xlsx",
         )
         sent += int(ok)
     return sent
@@ -81,10 +81,10 @@ def send_validation_report(db: Session) -> int:
     for user in users:
         ok = _send(
             user.email,
-            f"Optiwell: отчёт валидации данных и оффлайн-передатчиков {stamp}",
-            "Автоматический отчёт системы мониторинга скважин Optiwell.",
+            f"Мониторинг скважин: отчёт валидации данных и оффлайн-передатчиков {stamp}",
+            "Автоматический отчёт системы мониторинга скважин.",
             data,
-            f"optiwell_validation_{stamp}.xlsx",
+            f"report_validation_{stamp}.xlsx",
         )
         sent += int(ok)
     return sent

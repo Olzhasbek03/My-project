@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 from . import config, models
 from .database import get_db
 
-_serializer = URLSafeSerializer(config.SECRET_KEY, salt="optiwell-session")
+_serializer = URLSafeSerializer(config.SECRET_KEY, salt="app-session")
 
-SESSION_COOKIE = "optiwell_session"
+SESSION_COOKIE = "app_session"
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:

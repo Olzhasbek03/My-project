@@ -1,7 +1,7 @@
 """Инициализация данных при первом запуске (в т.ч. на serverless-хостинге).
 
 На Vercel файловая система read-only, поэтому SQLite живёт в /tmp
-(см. app/config.py) и наполняется из data/Optiwell_Cloud.csv при холодном
+(см. app/config.py) и наполняется из data/wells_export.csv при холодном
 старте. Функция идемпотентна.
 """
 import logging
@@ -10,7 +10,7 @@ import os
 from . import models
 from .database import Base, SessionLocal, engine
 
-log = logging.getLogger("optiwell.bootstrap")
+log = logging.getLogger("wellapp.bootstrap")
 
 
 def ensure_data() -> None:
@@ -19,7 +19,7 @@ def ensure_data() -> None:
         if db.query(models.Well).count() > 0:
             return
     csv_path = os.path.join(os.path.dirname(__file__), "..", "data",
-                            "Optiwell_Cloud.csv")
+                            "wells_export.csv")
     if os.path.exists(csv_path):
         from . import import_csv
         log.info("Пустая база — импорт %s", csv_path)

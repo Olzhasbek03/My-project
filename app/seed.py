@@ -122,7 +122,7 @@ def run(wells_per_gzu: int = 6) -> None:
 
     # Пользователи трёх уровней доступа
     admin = models.User(username="admin", full_name="Администратор платформы",
-                        email="optiwell@kbm.kz",
+                        email="monitoring@kbm.kz",
                         password_hash=hash_password("admin"),
                         role=models.ROLE_ADMIN, receive_reports=True)
     db.add(admin)

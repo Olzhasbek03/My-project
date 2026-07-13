@@ -2,10 +2,10 @@
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "app_title": {
-        "ru": "Optiwell — мониторинг скважин",
-        "kk": "Optiwell — ұңғымалар мониторингі",
-        "en": "Optiwell — Well Monitoring",
-        "zh": "Optiwell — 油井监控",
+        "ru": "Мониторинг скважин",
+        "kk": "Ұңғымалар мониторингі",
+        "en": "Well Monitoring",
+        "zh": "油井监控",
     },
     "dashboard": {"ru": "Дашборд", "kk": "Дашборд", "en": "Dashboard", "zh": "仪表板"},
     "wells": {"ru": "Фонд скважин", "kk": "Ұңғымалар қоры", "en": "Well Stock", "zh": "井群"},

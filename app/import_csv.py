@@ -1,7 +1,7 @@
-"""Импорт реального фонда скважин из экспорта Optiwell Cloud (CSV).
+"""Импорт реального фонда скважин из CSV-экспорта фонда скважин.
 
 Запуск:  python -m app.import_csv [путь_к_csv]
-По умолчанию читает data/Optiwell_Cloud.csv.
+По умолчанию читает data/wells_export.csv.
 
 Формат экспорта: Название Скважины, ГЗУ, Связь (unix-время последнего выхода
 на связь), Статус работы (Running/Stop/пусто), Тип Скважины (Srp=ШГН /
@@ -44,7 +44,7 @@ def _cluster(name: str, spread: float) -> tuple[float, float]:
     return dy, dx
 
 
-def run(path: str = "data/Optiwell_Cloud.csv") -> None:
+def run(path: str = "data/wells_export.csv") -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     with open(path, encoding="utf-8") as fh:
@@ -135,7 +135,7 @@ def run(path: str = "data/Optiwell_Cloud.csv") -> None:
                       .filter(models.WellComment.well_id == well.id,
                               models.WellComment.text == comment).first())
             if not exists:
-                db.add(models.WellComment(well_id=well.id, author="Импорт Optiwell Cloud",
+                db.add(models.WellComment(well_id=well.id, author="Импорт CSV",
                                           text=comment))
 
     # 14 базовых станций по ТЗ (п. 2.1.2), если ещё не созданы
@@ -150,7 +150,7 @@ def run(path: str = "data/Optiwell_Cloud.csv") -> None:
     if db.query(models.User).count() == 0:
         from .auth import hash_password
         db.add(models.User(username="admin", full_name="Администратор платформы",
-                           email="optiwell@kbm.kz",
+                           email="monitoring@kbm.kz",
                            password_hash=hash_password("admin"),
                            role=models.ROLE_ADMIN, receive_reports=True))
 
@@ -160,4 +160,4 @@ def run(path: str = "data/Optiwell_Cloud.csv") -> None:
 
 
 if __name__ == "__main__":
-    run(sys.argv[1] if len(sys.argv) > 1 else "data/Optiwell_Cloud.csv")
+    run(sys.argv[1] if len(sys.argv) > 1 else "data/wells_export.csv")

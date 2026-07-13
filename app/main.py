@@ -1,4 +1,4 @@
-"""Optiwell — программный комплекс мониторинга, анализа и оптимизации скважин.
+"""Программный комплекс мониторинга, анализа и оптимизации скважин.
 
 Запуск:  uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="Optiwell", lifespan=lifespan)
+app = FastAPI(title="Well Monitor", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(pages.router)
 app.include_router(admin.router)

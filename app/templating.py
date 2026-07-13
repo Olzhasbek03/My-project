@@ -1,4 +1,4 @@
-"""Рендеринг шаблонов с учётом языка пользователя (cookie optiwell_lang)."""
+"""Рендеринг шаблонов с учётом языка пользователя (cookie site_lang)."""
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
@@ -10,7 +10,7 @@ templates = Jinja2Templates(directory="templates")
 
 def render(request: Request, name: str, context: dict, status_code: int = 200,
            radio_mode: bool = False):
-    lang = request.cookies.get("optiwell_lang", config.DEFAULT_LANGUAGE)
+    lang = request.cookies.get("site_lang", config.DEFAULT_LANGUAGE)
     if lang not in config.LANGUAGES:
         lang = config.DEFAULT_LANGUAGE
     # Модуль радиоанализа — казахский/английский/русский (п. 2.1.3.4 ТЗ)

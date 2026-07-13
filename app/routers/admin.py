@@ -138,11 +138,11 @@ def update_device(device_id: int, report_interval_sec: int = Form(...),
     return RedirectResponse("/admin", status_code=303)
 
 
-# ---------- загрузка экспорта Optiwell Cloud ----------
+# ---------- загрузка CSV-экспорта фонда скважин ----------
 
 @router.post("/import")
 async def import_export(file: UploadFile = File(...)):
-    """Обновление фонда скважин свежим CSV-экспортом Optiwell Cloud без
+    """Обновление фонда скважин свежим CSV-экспортом фонда скважин без
     доступа к серверу: существующие скважины обновляются, новые добавляются,
     история измерений накапливается."""
     from .. import import_csv
