@@ -10,6 +10,12 @@ import os
 #   OPTIWELL_DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/optiwell
 DATABASE_URL = os.environ.get("OPTIWELL_DATABASE_URL", "sqlite:///./optiwell.db")
 
+# Serverless (Vercel): файловая система read-only, пишем SQLite в /tmp.
+# Для постоянного хранения задайте OPTIWELL_DATABASE_URL (напр. Neon Postgres).
+IS_SERVERLESS = bool(os.environ.get("VERCEL"))
+if IS_SERVERLESS and "OPTIWELL_DATABASE_URL" not in os.environ:
+    DATABASE_URL = "sqlite:////tmp/optiwell.db"
+
 # Секрет подписи сессионных cookie
 SECRET_KEY = os.environ.get("OPTIWELL_SECRET_KEY", "change-me-in-production")
 

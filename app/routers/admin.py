@@ -9,7 +9,10 @@
 - настройка сбора и обработки данных (период передачи, регистры терминалов);
 - настройка расписания отправки суточных отчётов.
 """
-from fastapi import APIRouter, Depends, Form, Request
+import os
+import tempfile
+
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -132,6 +135,25 @@ def update_device(device_id: int, report_interval_sec: int = Form(...),
         dev.report_interval_sec = max(1, min(report_interval_sec, 36000))
         dev.modbus_registers = modbus_registers
         db.commit()
+    return RedirectResponse("/admin", status_code=303)
+
+
+# ---------- загрузка экспорта Optiwell Cloud ----------
+
+@router.post("/import")
+async def import_export(file: UploadFile = File(...)):
+    """Обновление фонда скважин свежим CSV-экспортом Optiwell Cloud без
+    доступа к серверу: существующие скважины обновляются, новые добавляются,
+    история измерений накапливается."""
+    from .. import import_csv
+    data = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        import_csv.run(tmp_path)
+    finally:
+        os.unlink(tmp_path)
     return RedirectResponse("/admin", status_code=303)
 
 

@@ -110,7 +110,12 @@ def run(path: str = "data/Optiwell_Cloud.csv") -> None:
 
         q_fact, q_4h = _f(row["Qж (факт), т/сут"]), _f(row["Qж (4 часа), т/сут"])
         rlin, tlin = _f(row["Рлин, атм"]), _f(row["Тлин, °C"])
-        if last_seen is not None and q_fact is not None:
+        already = (last_seen is not None and
+                   db.query(models.Measurement)
+                   .filter(models.Measurement.well_id == well.id,
+                           models.Measurement.measured_at == last_seen)
+                   .first() is not None)
+        if last_seen is not None and q_fact is not None and not already:
             # два замера: текущий и четырёхчасовой давности — базис для
             # расчёта дебита по интервалам
             if q_4h is not None:

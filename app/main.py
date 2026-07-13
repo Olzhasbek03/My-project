@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import config
 from .database import Base, engine
 from .routers import admin, api, pages
 from .scheduler import scheduler_loop
@@ -20,6 +21,11 @@ logging.basicConfig(level=logging.INFO)
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    if config.IS_SERVERLESS:
+        # на serverless нет фонового процесса — расписание отчётов должно
+        # запускаться внешним cron (Vercel Cron → GET /api/cron/reports)
+        yield
+        return
     task = asyncio.create_task(scheduler_loop())
     yield
     task.cancel()

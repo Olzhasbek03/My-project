@@ -104,6 +104,27 @@ float32 температура | uint8 авария | uint16 батарея, м�
 | `OPTIWELL_OFFLINE_MINUTES` | порог «передатчик оффлайн» | 180 |
 | `OPTIWELL_RATE_DROP_PCT` | порог значительного снижения дебита | 30 |
 
+## Деплой на Vercel (демо)
+
+Репозиторий готов к деплою: `vercel.json` + ASGI-точка входа `api/index.py`.
+При холодном старте пустая база в `/tmp` автоматически наполняется из
+`data/Optiwell_Cloud.csv`.
+
+```bash
+npm i -g vercel
+vercel login          # вход в аккаунт
+vercel --prod
+```
+
+Либо через vercel.com: **Add New → Project → Import Git Repository** и выбрать
+этот репозиторий — настройки подхватятся из `vercel.json` автоматически.
+
+Ограничения serverless-режима (демо): SQLite в `/tmp` эфемерна — комментарии
+и правки админки живут до перезапуска инстанса (для постоянного хранения
+задайте `OPTIWELL_DATABASE_URL` на облачный Postgres, например Neon);
+фоновый планировщик отчётов не работает — рассылка запускается Vercel Cron
+через `GET /api/cron/reports?kind=4h|daily|validation`.
+
 ## Развёртывание на облачном сервере Заказчика (п. 3.9 ТЗ)
 
 Комплекс — одно ASGI-приложение; для продуктива:

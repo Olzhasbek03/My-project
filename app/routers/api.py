@@ -125,6 +125,24 @@ def chirpstack_uplink(event: UplinkEvent, db: Session = Depends(get_db),
     return {"status": "ok", "measurement_id": measurement_id}
 
 
+# ---------- внешний cron для serverless (Vercel Cron) ----------
+
+@router.get("/cron/reports")
+def cron_reports(kind: str = "4h", db: Session = Depends(get_db),
+                 authorization: str | None = Header(default=None)):
+    """Триггер рассылки отчётов внешним планировщиком, когда фоновый процесс
+    недоступен (serverless). kind: 4h | daily | validation."""
+    _check_token(authorization)
+    from .. import emailer
+    if kind == "daily":
+        sent = emailer.send_periodic_reports(db, 24)
+    elif kind == "validation":
+        sent = emailer.send_validation_report(db)
+    else:
+        sent = emailer.send_periodic_reports(db, 4)
+    return {"kind": kind, "sent": sent}
+
+
 # ---------- обмен со SCADA (п. 2.1.3.6 ТЗ) ----------
 
 @router.get("/scada/snapshot")

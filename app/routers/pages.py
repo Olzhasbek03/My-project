@@ -121,6 +121,8 @@ PAGE_SIZE = 100
 @router.get("/wells", response_class=HTMLResponse)
 def wells_list(request: Request, q: str = "", sort: str = "number",
                dir: str = "asc", page: int = 1,
+               gzu: int = 0, cdn: int = 0, wtype: str = "",
+               link: str = "", wstatus: str = "",
                db: Session = Depends(get_db),
                user: models.User = Depends(get_current_user)):
     anchor = services.link_anchor(db)
@@ -129,7 +131,23 @@ def wells_list(request: Request, q: str = "", sort: str = "number",
         needle = f"%{q.strip()}%"
         wells_q = wells_q.filter(models.Well.number.ilike(needle) |
                                  models.Gzu.name.ilike(needle))
+    if gzu:
+        wells_q = wells_q.filter(models.Well.gzu_id == gzu)
+    if cdn:
+        wells_q = wells_q.filter(models.Gzu.cdn_id == cdn)
+    if wtype in models.WELL_TYPES:
+        wells_q = wells_q.filter(models.Well.well_type == wtype)
+    if wstatus == "running":
+        wells_q = wells_q.filter(models.Well.work_status == "Running")
+    elif wstatus == "stop":
+        wells_q = wells_q.filter(models.Well.work_status == "Stop")
+    elif wstatus == "none":
+        wells_q = wells_q.filter(models.Well.work_status == "")
     wells = wells_q.all()
+    if link == "on":
+        wells = [w for w in wells if services.link_online(w, anchor)]
+    elif link == "off":
+        wells = [w for w in wells if not services.link_online(w, anchor)]
     last = services.latest_measurements(db, [w.id for w in wells])
     comments = dict(
         db.query(models.WellComment.well_id, models.WellComment.text)
@@ -153,11 +171,18 @@ def wells_list(request: Request, q: str = "", sort: str = "number",
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(1, min(page, pages))
     online_count = sum(1 for r in rows if r["online"])
+    from urllib.parse import urlencode
+    filters_qs = urlencode({"q": q, "gzu": gzu, "cdn": cdn, "wtype": wtype,
+                            "link": link, "wstatus": wstatus})
     return render(request, "wells.html", {
         "user": user,
         "rows": rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE],
         "total": total, "online_count": online_count,
         "page": page, "pages": pages, "q": q, "sort": sort, "dir": dir,
+        "gzu": gzu, "cdn": cdn, "wtype": wtype, "link": link, "wstatus": wstatus,
+        "filters_qs": filters_qs,
+        "gzus": db.query(models.Gzu).order_by(models.Gzu.name).all(),
+        "cdns": db.query(models.Cdn).order_by(models.Cdn.name).all(),
     })
 
 
