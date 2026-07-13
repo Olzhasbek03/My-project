@@ -18,18 +18,89 @@ def last_measurement(db: Session, well_id: int) -> models.Measurement | None:
             .first())
 
 
-def well_status(db: Session, well: models.Well) -> str:
-    """Статус: offline (нет данных дольше порога) / stopped (авария или нулевой
+def link_anchor(db: Session) -> dt.datetime:
+    """Опорное время для определения статуса связи — самый свежий выход на
+    связь по всему фонду. При живом потоке данных совпадает с текущим
+    временем; для статического среза не даёт всему фонду «протухнуть»."""
+    latest = db.query(func.max(models.Device.last_seen_at)).scalar()
+    return latest or utcnow()
+
+
+def link_online(well: models.Well, anchor: dt.datetime) -> bool:
+    """Статус связи («Связь»): выходил ли терминал на связь за последние
+    OFFLINE_THRESHOLD_MINUTES относительно опорного времени."""
+    dev = well.device
+    if dev is None or dev.last_seen_at is None:
+        return False
+    return (anchor - dev.last_seen_at) <= dt.timedelta(
+        minutes=config.OFFLINE_THRESHOLD_MINUTES)
+
+
+def well_status(db: Session, well: models.Well,
+                anchor: dt.datetime | None = None) -> str:
+    """Сводный статус: offline (нет связи) / stopped (Stop, авария или нулевой
     дебит) / in_operation."""
+    anchor = anchor or link_anchor(db)
+    if not link_online(well, anchor):
+        return "offline"
+    if well.work_status == "Stop":
+        return "stopped"
     m = last_measurement(db, well.id)
-    if m is None:
-        return "offline"
-    age = utcnow() - m.received_at
-    if age > dt.timedelta(minutes=config.OFFLINE_THRESHOLD_MINUTES):
-        return "offline"
-    if m.alarm or m.flow_rate <= 0:
+    if m is not None and (m.alarm or m.flow_rate <= 0):
         return "stopped"
     return "in_operation"
+
+
+def latest_measurements(db: Session, well_ids: list[int] | None = None
+                        ) -> dict[int, models.Measurement]:
+    """Последнее измерение по каждой скважине одним запросом (для списков)."""
+    sub = (db.query(models.Measurement.well_id,
+                    func.max(models.Measurement.measured_at).label("mx"))
+           .group_by(models.Measurement.well_id))
+    if well_ids is not None:
+        sub = sub.filter(models.Measurement.well_id.in_(well_ids))
+    sub = sub.subquery()
+    q = (db.query(models.Measurement)
+         .join(sub, (models.Measurement.well_id == sub.c.well_id) &
+                    (models.Measurement.measured_at == sub.c.mx)))
+    return {m.well_id: m for m in q.all()}
+
+
+def previous_flow(db: Session, well_ids: list[int] | None = None
+                  ) -> dict[int, float]:
+    """Предпоследний замер дебита по каждой скважине («Qж за 4 часа») —
+    одним запросом для списков."""
+    q = (db.query(models.Measurement.well_id, models.Measurement.flow_rate)
+         .order_by(models.Measurement.well_id,
+                   models.Measurement.measured_at.desc()))
+    if well_ids is not None:
+        q = q.filter(models.Measurement.well_id.in_(well_ids))
+    result: dict[int, float] = {}
+    seen: dict[int, int] = {}
+    for wid, flow in q.all():
+        n = seen.get(wid, 0)
+        if n == 1:
+            result[wid] = flow
+        seen[wid] = n + 1
+    return result
+
+
+def bulk_statuses(db: Session, wells: list[models.Well]) -> dict[int, str]:
+    """Сводные статусы для списков/карты без N+1 запросов."""
+    anchor = link_anchor(db)
+    last = latest_measurements(db, [w.id for w in wells])
+    out: dict[int, str] = {}
+    for w in wells:
+        if not link_online(w, anchor):
+            out[w.id] = "offline"
+            continue
+        m = last.get(w.id)
+        if w.work_status == "Stop" or (m is not None and
+                                       (m.alarm or m.flow_rate <= 0)):
+            out[w.id] = "stopped"
+        else:
+            out[w.id] = "in_operation"
+    return out
 
 
 def rate_for_period(db: Session, well_id: int,

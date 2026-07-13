@@ -50,22 +50,26 @@ def _write_headers(ws) -> None:
 
 
 def wells_report(db: Session, user: models.User, period_hours: int) -> bytes:
-    """Четырёхчасовой (period_hours=4) или суточный (period_hours=24) отчёт."""
-    now = services.utcnow()
-    start = now - dt.timedelta(hours=period_hours)
+    """Четырёхчасовой (period_hours=4) или суточный (period_hours=24) отчёт:
+    дебит по каждой скважине (включая нулевой), состояние и скважины со
+    значительным снижением дебита за последние 4 часа."""
     wb = Workbook()
     ws = wb.active
     ws.title = "4h" if period_hours == 4 else "Daily"
     _write_headers(ws)
 
     wells = visible_wells_query(db, user).order_by(models.Well.number).all()
+    statuses = services.bulk_statuses(db, wells)
+    last = services.latest_measurements(db, [w.id for w in wells])
+    prev_flow = services.previous_flow(db, [w.id for w in wells])
     row = 2
     for well in wells:
-        status = services.well_status(db, well)
-        volume = services.volume_for_period(db, well.id, start, now)
-        drop = services.rate_drop_pct(db, well.id, now)
-        values = [well.number, well.gzu.name, well.gzu.cdn.name, volume,
-                  STATUS_LABELS[status], drop]
+        m = last.get(well.id)
+        rate = round(m.flow_rate, 1) if m else 0.0
+        prev = prev_flow.get(well.id)
+        drop = round((prev - rate) / prev * 100, 1) if prev and prev > 0 else 0.0
+        values = [well.number, well.gzu.name, well.gzu.cdn.name, rate,
+                  STATUS_LABELS[statuses[well.id]], max(drop, 0.0)]
         for col, value in enumerate(values, start=1):
             ws.cell(row=row, column=col, value=value)
         if drop >= config.RATE_DROP_THRESHOLD_PCT:
@@ -131,37 +135,47 @@ def validation_report(db: Session) -> bytes:
 
 def wells_excel_export(db: Session, user: models.User) -> bytes:
     """Выгрузка отображаемых данных фонда скважин из интерфейса в Excel
-    (п. 2.1.3.3 ТЗ)."""
-    prev_start, prev_end = services.previous_day_bounds()
+    (п. 2.1.3.3 ТЗ) — колонки соответствуют таблице портала."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Wells"
-    cols = ["Скважина", "ГЗУ", "ЦДН", "Фонд", "Тип расходомера",
-            "Последнее показание, м³/сут", "Время опроса", "Время получения",
-            "Дебит за пред. сутки, м³", "Статус"]
+    cols = ["Название Скважины", "ГЗУ", "Цех", "Связь", "Статус работы",
+            "Тип Скважины", "Qж (факт), т/сут", "Qж (4 часа), т/сут",
+            "Рлин, атм", "Тлин, °C", "Работа, ч", "Время опроса",
+            "Комментарии"]
     for c, name in enumerate(cols, start=1):
         cell = ws.cell(row=1, column=c, value=name)
         cell.font = _bold
-        ws.column_dimensions[cell.column_letter].width = 24
-    fund_names = {models.FUND_PRODUCING: "Добывающий",
-                  models.FUND_INJECTION: "Нагнетательный (ППД)",
-                  models.FUND_IDLE: "Бездействие"}
+        ws.column_dimensions[cell.column_letter].width = 20
+    wells = visible_wells_query(db, user).order_by(models.Well.number).all()
+    anchor = services.link_anchor(db)
+    last = services.latest_measurements(db, [w.id for w in wells])
+    prev_flow = services.previous_flow(db, [w.id for w in wells])
+    comments = dict(
+        db.query(models.WellComment.well_id, models.WellComment.text)
+        .filter(models.WellComment.well_id.in_([w.id for w in wells] or [-1]))
+        .order_by(models.WellComment.created_at).all())
     row = 2
-    for well in visible_wells_query(db, user).order_by(models.Well.number).all():
-        m = services.last_measurement(db, well.id)
+    for well in wells:
+        m = last.get(well.id)
+        prev = prev_flow.get(well.id)
         ws.cell(row=row, column=1, value=well.number)
         ws.cell(row=row, column=2, value=well.gzu.name)
         ws.cell(row=row, column=3, value=well.gzu.cdn.name)
-        ws.cell(row=row, column=4, value=fund_names[well.fund])
-        ws.cell(row=row, column=5, value=well.meter_type)
-        ws.cell(row=row, column=6, value=m.flow_rate if m else None)
-        ws.cell(row=row, column=7,
-                value=m.measured_at.strftime("%d.%m.%Y %H:%M") if m else "—")
-        ws.cell(row=row, column=8,
-                value=m.received_at.strftime("%d.%m.%Y %H:%M") if m else "—")
+        ws.cell(row=row, column=4,
+                value="Онлайн" if services.link_online(well, anchor) else "Оффлайн")
+        ws.cell(row=row, column=5, value=well.work_status or "-")
+        ws.cell(row=row, column=6, value=well.well_type)
+        ws.cell(row=row, column=7, value=round(m.flow_rate, 1) if m else None)
+        ws.cell(row=row, column=8, value=round(prev, 1) if prev is not None else None)
         ws.cell(row=row, column=9,
-                value=services.volume_for_period(db, well.id, prev_start, prev_end))
-        ws.cell(row=row, column=10, value=STATUS_LABELS[services.well_status(db, well)])
+                value=m.pressure if m and m.pressure is not None else None)
+        ws.cell(row=row, column=10,
+                value=m.temperature if m and m.temperature is not None else None)
+        ws.cell(row=row, column=11, value=well.work_hours)
+        ws.cell(row=row, column=12,
+                value=m.measured_at.strftime("%d.%m.%Y %H:%M") if m else "—")
+        ws.cell(row=row, column=13, value=comments.get(well.id, ""))
         row += 1
     buf = io.BytesIO()
     wb.save(buf)

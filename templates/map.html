@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{{ t('map') }}</h1>
-<p class="muted">
-  <span class="dot ok"></span> {{ t('in_operation') }}
-  <span class="dot warn"></span> {{ t('stopped') }}
-  <span class="dot bad"></span> {{ t('offline') }}
-  <span class="dot gw"></span> {{ t('gateway') }}
+<p class="legend">
+  <span><span class="dot on"></span> {{ t('in_operation') }}</span>
+  <span><span class="dot stop"></span> {{ t('stopped') }}</span>
+  <span><span class="dot off"></span> {{ t('offline') }}</span>
+  <span><span class="dot gw"></span> {{ t('gateway') }}</span>
 </p>
-<svg id="wellmap" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet"></svg>
+<svg id="wellmap" viewBox="0 0 1220 680" preserveAspectRatio="xMidYMid meet"></svg>
 <script>
 const points = {{ points | tojson }};
 const gateways = {{ gateways | tojson }};
@@ -16,32 +16,34 @@ const all = points.concat(gateways);
 const lats = all.map(p => p.lat), lons = all.map(p => p.lon);
 const minLat = Math.min(...lats), maxLat = Math.max(...lats);
 const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-const pad = 40, W = 1000, H = 640;
+const pad = 40, W = 1220, H = 680;
 const x = lon => pad + (lon - minLon) / ((maxLon - minLon) || 1) * (W - 2 * pad);
 const y = lat => H - pad - (lat - minLat) / ((maxLat - minLat) || 1) * (H - 2 * pad);
-const colors = {in_operation: '#2e9e5b', stopped: '#d99a1f', offline: '#c0392b'};
+const colors = {in_operation: '#2bbf8f', stopped: '#ffb829', offline: '#e5484d'};
 const ns = 'http://www.w3.org/2000/svg';
-gateways.forEach(g => {
-  const r = document.createElementNS(ns, 'rect');
-  r.setAttribute('x', x(g.lon) - 7); r.setAttribute('y', y(g.lat) - 7);
-  r.setAttribute('width', 14); r.setAttribute('height', 14);
-  r.setAttribute('fill', g.online ? '#3567b0' : '#888');
-  const t = document.createElementNS(ns, 'title');
-  t.textContent = g.name;
-  r.appendChild(t);
-  svg.appendChild(r);
-});
 points.forEach(p => {
   const a = document.createElementNS(ns, 'a');
   a.setAttribute('href', '/wells/' + p.id);
   const c = document.createElementNS(ns, 'circle');
-  c.setAttribute('cx', x(p.lon)); c.setAttribute('cy', y(p.lat)); c.setAttribute('r', 6);
-  c.setAttribute('fill', colors[p.status] || '#888');
+  c.setAttribute('cx', x(p.lon)); c.setAttribute('cy', y(p.lat)); c.setAttribute('r', 3.2);
+  c.setAttribute('fill', colors[p.status] || '#666');
+  c.setAttribute('fill-opacity', '0.85');
   const t = document.createElementNS(ns, 'title');
   t.textContent = p.number + ' — ' + p.status;
   c.appendChild(t);
   a.appendChild(c);
   svg.appendChild(a);
+});
+gateways.forEach(g => {
+  const r = document.createElementNS(ns, 'rect');
+  r.setAttribute('x', x(g.lon) - 6); r.setAttribute('y', y(g.lat) - 6);
+  r.setAttribute('width', 12); r.setAttribute('height', 12);
+  r.setAttribute('rx', 3);
+  r.setAttribute('fill', g.online ? '#8052ff' : '#555');
+  const t = document.createElementNS(ns, 'title');
+  t.textContent = g.name;
+  r.appendChild(t);
+  svg.appendChild(r);
 });
 </script>
 {% endblock %}

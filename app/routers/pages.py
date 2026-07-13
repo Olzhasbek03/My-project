@@ -61,46 +61,104 @@ def index():
 def dashboard(request: Request, db: Session = Depends(get_db),
               user: models.User = Depends(get_current_user)):
     wells = visible_wells_query(db, user).all()
-    statuses = {w.id: services.well_status(db, w) for w in wells}
-    prev_start, prev_end = services.previous_day_bounds()
-    total_prev_day = sum(
-        services.volume_for_period(db, w.id, prev_start, prev_end)
-        for w in wells if w.fund == models.FUND_PRODUCING)
+    anchor = services.link_anchor(db)
+    last = services.latest_measurements(db, [w.id for w in wells])
+
+    online = stopped = 0
+    q_total = 0.0
+    for w in wells:
+        if services.link_online(w, anchor):
+            online += 1
+            m = last.get(w.id)
+            if w.work_status == "Stop" or (m is not None and m.flow_rate <= 0):
+                stopped += 1
+            if m is not None and m.flow_rate > 0:
+                q_total += m.flow_rate
     kpi = {
         "total": len(wells),
-        "producing": sum(1 for w in wells if w.fund == models.FUND_PRODUCING),
-        "injection": sum(1 for w in wells if w.fund == models.FUND_INJECTION),
-        "in_operation": sum(1 for s in statuses.values() if s == "in_operation"),
-        "stopped": sum(1 for s in statuses.values() if s == "stopped"),
-        "offline": sum(1 for s in statuses.values() if s == "offline"),
-        "prev_day_total": round(total_prev_day, 1),
+        "online": online,
+        "offline": len(wells) - online,
+        "stopped": stopped,
+        "shgn": sum(1 for w in wells if w.well_type == "ШГН"),
+        "vn": sum(1 for w in wells if w.well_type == "ВН"),
+        "q_total": round(q_total),
     }
+    # значительное снижение дебита за 4 часа: сравнение Qж(факт) и Qж(4 часа)
+    prev_flow = services.previous_flow(db, [w.id for w in wells])
     drops = []
     for w in wells:
-        pct = services.rate_drop_pct(db, w.id)
+        m = last.get(w.id)
+        prev = prev_flow.get(w.id)
+        if m is None or not prev or prev <= 0:
+            continue
+        if w.work_status == "Stop":  # уже учтена как остановленная
+            continue
+        pct = round((prev - m.flow_rate) / prev * 100, 1)
         if pct >= config.RATE_DROP_THRESHOLD_PCT:
-            drops.append({"well": w, "drop": pct})
+            drops.append({"well": w, "drop": pct, "rate": m.flow_rate})
     drops.sort(key=lambda d: -d["drop"])
     return render(request, "dashboard.html",
-                  {"user": user, "kpi": kpi, "drops": drops[:15]})
+                  {"user": user, "kpi": kpi, "drops": drops[:12]})
 
 
 # ---------- фонд скважин ----------
 
+SORT_COLUMNS = {
+    "number": lambda r: r["well"].number,
+    "gzu": lambda r: r["well"].gzu.name,
+    "link": lambda r: r["online"],
+    "work_status": lambda r: r["well"].work_status,
+    "well_type": lambda r: r["well"].well_type,
+    "q_fact": lambda r: r["last"].flow_rate if r["last"] else -1,
+    "q_4h": lambda r: r["q_4h"] if r["q_4h"] is not None else -1,
+    "rlin": lambda r: (r["last"].pressure if r["last"] and r["last"].pressure is not None else -1),
+    "tlin": lambda r: (r["last"].temperature if r["last"] and r["last"].temperature is not None else -1),
+}
+
+PAGE_SIZE = 100
+
+
 @router.get("/wells", response_class=HTMLResponse)
-def wells_list(request: Request, db: Session = Depends(get_db),
+def wells_list(request: Request, q: str = "", sort: str = "number",
+               dir: str = "asc", page: int = 1,
+               db: Session = Depends(get_db),
                user: models.User = Depends(get_current_user)):
-    prev_start, prev_end = services.previous_day_bounds()
+    anchor = services.link_anchor(db)
+    wells_q = visible_wells_query(db, user)
+    if q.strip():
+        needle = f"%{q.strip()}%"
+        wells_q = wells_q.filter(models.Well.number.ilike(needle) |
+                                 models.Gzu.name.ilike(needle))
+    wells = wells_q.all()
+    last = services.latest_measurements(db, [w.id for w in wells])
+    comments = dict(
+        db.query(models.WellComment.well_id, models.WellComment.text)
+        .filter(models.WellComment.well_id.in_([w.id for w in wells] or [-1]))
+        .order_by(models.WellComment.created_at).all())
+
+    prev_flow = services.previous_flow(db, [w.id for w in wells])
     rows = []
-    for well in visible_wells_query(db, user).order_by(models.Well.number).all():
-        m = services.last_measurement(db, well.id)
+    for w in wells:
+        m = last.get(w.id)
+        q4 = prev_flow.get(w.id) if m is not None else None
         rows.append({
-            "well": well,
-            "status": services.well_status(db, well),
-            "last": m,
-            "prev_day": services.volume_for_period(db, well.id, prev_start, prev_end),
+            "well": w, "last": m, "q_4h": q4,
+            "online": services.link_online(w, anchor),
+            "comment": comments.get(w.id, ""),
         })
-    return render(request, "wells.html", {"user": user, "rows": rows})
+    key = SORT_COLUMNS.get(sort, SORT_COLUMNS["number"])
+    rows.sort(key=key, reverse=(dir == "desc"))
+
+    total = len(rows)
+    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, pages))
+    online_count = sum(1 for r in rows if r["online"])
+    return render(request, "wells.html", {
+        "user": user,
+        "rows": rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE],
+        "total": total, "online_count": online_count,
+        "page": page, "pages": pages, "q": q, "sort": sort, "dir": dir,
+    })
 
 
 @router.get("/wells/export.xlsx")
@@ -120,7 +178,11 @@ def well_detail(well_id: int, request: Request, db: Session = Depends(get_db),
     if well is None:
         return RedirectResponse("/wells", status_code=303)
     m = services.last_measurement(db, well.id)
-    prev_start, prev_end = services.previous_day_bounds()
+    # опорная точка — время последнего замера, чтобы интервалы и суточный
+    # дебит отражали фактический период данных, а не пустое «сегодня»
+    ref = m.measured_at if m else services.utcnow()
+    prev_start = ref.replace(hour=0, minute=0, second=0, microsecond=0)
+    prev_end = ref
     intervals = services.four_hour_intervals(prev_start)
     four_hours = list(zip(intervals, services.four_hour_rates(db, well.id, prev_start)))
     history = (db.query(models.Measurement)
@@ -133,7 +195,8 @@ def well_detail(well_id: int, request: Request, db: Session = Depends(get_db),
     return render(request, "well_detail.html", {
         "user": user, "well": well, "last": m,
         "status": services.well_status(db, well),
-        "prev_day": services.volume_for_period(db, well.id, prev_start, prev_end),
+        "prev_day": services.volume_for_period(
+            db, well.id, ref - dt.timedelta(hours=24), ref + dt.timedelta(minutes=1)),
         "four_hours": four_hours, "history": history, "comments": comments,
     })
 
@@ -155,9 +218,11 @@ def add_comment(well_id: int, text: str = Form(...), db: Session = Depends(get_d
 def wells_map(request: Request, db: Session = Depends(get_db),
               user: models.User = Depends(get_current_user)):
     wells = visible_wells_query(db, user).all()
+    statuses = services.bulk_statuses(db, wells)
     points = [{"number": w.number, "id": w.id,
                "lat": w.latitude, "lon": w.longitude,
-               "status": services.well_status(db, w)} for w in wells]
+               "status": statuses[w.id]} for w in wells
+              if w.latitude and w.longitude]
     gateways = [{"name": g.name, "lat": g.latitude, "lon": g.longitude,
                  "online": g.is_online}
                 for g in db.query(models.Gateway).all()]

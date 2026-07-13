@@ -20,14 +20,24 @@ from ..templating import render
 router = APIRouter(prefix="/admin", dependencies=[Depends(auth.require_admin)])
 
 
+ADMIN_LIST_LIMIT = 50
+
+
 @router.get("", response_class=HTMLResponse)
-def admin_home(request: Request, db: Session = Depends(get_db),
+def admin_home(request: Request, wq: str = "", db: Session = Depends(get_db),
                user: models.User = Depends(auth.require_admin)):
+    wells_q = db.query(models.Well).order_by(models.Well.number)
+    devices_q = (db.query(models.Device).join(models.Well)
+                 .order_by(models.Well.number))
+    if wq.strip():
+        needle = f"%{wq.strip()}%"
+        wells_q = wells_q.filter(models.Well.number.ilike(needle))
+        devices_q = devices_q.filter(models.Well.number.ilike(needle))
     return render(request, "admin.html", {
-        "user": user,
+        "user": user, "wq": wq, "limit": ADMIN_LIST_LIMIT,
         "users": db.query(models.User).order_by(models.User.username).all(),
-        "wells": db.query(models.Well).order_by(models.Well.number).all(),
-        "devices": db.query(models.Device).order_by(models.Device.dev_eui).all(),
+        "wells": wells_q.limit(ADMIN_LIST_LIMIT).all(),
+        "devices": devices_q.limit(ADMIN_LIST_LIMIT).all(),
         "gzus": db.query(models.Gzu).order_by(models.Gzu.name).all(),
         "cdns": db.query(models.Cdn).order_by(models.Cdn.name).all(),
         "meter_types": models.METER_TYPES,
@@ -94,6 +104,7 @@ def create_well(number: str = Form(...), gzu_id: int = Form(...),
 
 @router.post("/wells/{well_id}")
 def update_well(well_id: int, fund: str = Form(...), meter_type: str = Form(...),
+                well_type: str = Form("ШГН"),
                 water_cut_pct: float = Form(0.0), is_active: bool = Form(False),
                 db: Session = Depends(get_db)):
     """Перевод скважины между фондами (добывающий → ППД → БД), изменение типа
@@ -102,6 +113,7 @@ def update_well(well_id: int, fund: str = Form(...), meter_type: str = Form(...)
     if well:
         well.fund = fund
         well.meter_type = meter_type
+        well.well_type = well_type
         well.water_cut_pct = water_cut_pct
         well.is_active = is_active
         db.commit()

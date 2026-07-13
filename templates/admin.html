@@ -53,6 +53,13 @@
 </details>
 
 <h2>{{ t('well_mgmt') }}</h2>
+<div class="toolbar">
+  <form method="get" action="/admin">
+    <input name="wq" value="{{ wq }}" placeholder="{{ t('search') }}: {{ t('well') }} №…">
+    <button type="submit">{{ t('search') }}</button>
+  </form>
+  <span class="muted">{{ t('all') }} ≤ {{ limit }}</span>
+</div>
 <details class="panel">
   <summary>+ {{ t('add_well') }}</summary>
   <form method="post" action="/admin/wells" class="grid-form">
@@ -82,13 +89,19 @@
 </details>
 
 <table>
-  <tr><th>{{ t('well') }}</th><th>ГЗУ</th><th>{{ t('fund') }}</th>
+  <tr><th>{{ t('well') }}</th><th>ГЗУ</th><th>{{ t('well_type') }}</th><th>{{ t('fund') }}</th>
       <th>{{ t('meter_type') }}</th><th>{{ t('water_cut') }}</th><th>Опрос</th><th></th></tr>
   {% for w in wells %}
   <tr>
     <form method="post" action="/admin/wells/{{ w.id }}">
     <td>{{ w.number }}</td>
     <td>{{ w.gzu.name }}</td>
+    <td>
+      <select name="well_type">
+        <option {{ 'selected' if w.well_type == 'ШГН' }}>ШГН</option>
+        <option {{ 'selected' if w.well_type == 'ВН' }}>ВН</option>
+      </select>
+    </td>
     <td>
       <select name="fund">
         <option value="producing" {{ 'selected' if w.fund == 'producing' }}>{{ t('producing') }}</option>

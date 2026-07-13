@@ -41,6 +41,10 @@ FUND_IDLE = "idle"                # бездействие (БД)
 # Типы расходомеров по ТЗ (п. 2.1)
 METER_TYPES = ["СКЖ (БЭСКЖ-2М)", "КССЖ", "NuFlo MC-II", "NuFlo MC-III"]
 
+# Типы скважин (способ эксплуатации): ШГН — штанговый глубинный насос (Srp),
+# ВН — винтовой насос (Pcp)
+WELL_TYPES = ["ШГН", "ВН"]
+
 
 class Well(Base):
     __tablename__ = "well"
@@ -50,6 +54,9 @@ class Well(Base):
     gzu: Mapped[Gzu] = relationship(back_populates="wells")
     fund: Mapped[str] = mapped_column(String(16), default=FUND_PRODUCING)
     meter_type: Mapped[str] = mapped_column(String(32), default=METER_TYPES[0])
+    well_type: Mapped[str] = mapped_column(String(8), default="ШГН")     # ШГН | ВН
+    work_status: Mapped[str] = mapped_column(String(16), default="")     # Running | Stop | ""
+    work_hours: Mapped[str] = mapped_column(String(16), default="-")     # наработка, ч
     latitude: Mapped[float] = mapped_column(Float, default=0.0)
     longitude: Mapped[float] = mapped_column(Float, default=0.0)
     water_cut_pct: Mapped[float] = mapped_column(Float, default=0.0)  # обводнённость, %
