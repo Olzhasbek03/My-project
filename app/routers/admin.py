@@ -20,15 +20,14 @@ from .. import auth, models, services
 from ..database import get_db
 from ..templating import render
 
-router = APIRouter(prefix="/admin", dependencies=[Depends(auth.require_admin)])
+router = APIRouter(prefix="/admin")
 
 
 ADMIN_LIST_LIMIT = 50
 
 
 @router.get("", response_class=HTMLResponse)
-def admin_home(request: Request, wq: str = "", db: Session = Depends(get_db),
-               user: models.User = Depends(auth.require_admin)):
+def admin_home(request: Request, wq: str = "", db: Session = Depends(get_db)):
     wells_q = db.query(models.Well).order_by(models.Well.number)
     devices_q = (db.query(models.Device).join(models.Well)
                  .order_by(models.Well.number))
@@ -37,7 +36,7 @@ def admin_home(request: Request, wq: str = "", db: Session = Depends(get_db),
         wells_q = wells_q.filter(models.Well.number.ilike(needle))
         devices_q = devices_q.filter(models.Well.number.ilike(needle))
     return render(request, "admin.html", {
-        "user": user, "wq": wq, "limit": ADMIN_LIST_LIMIT,
+        "wq": wq, "limit": ADMIN_LIST_LIMIT,
         "users": db.query(models.User).order_by(models.User.username).all(),
         "wells": wells_q.limit(ADMIN_LIST_LIMIT).all(),
         "devices": devices_q.limit(ADMIN_LIST_LIMIT).all(),

@@ -5,41 +5,11 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from .. import auth, config, models, radio, reports, services
-from ..auth import get_current_user, visible_wells_query
+from .. import config, models, radio, reports, services
 from ..database import get_db
 from ..templating import render
 
 router = APIRouter()
-
-
-# ---------- вход / выход ----------
-
-@router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return render(request, "login.html", {"error": False})
-
-
-@router.post("/login")
-def login(request: Request, username: str = Form(...), password: str = Form(...),
-          db: Session = Depends(get_db)):
-    user = (db.query(models.User)
-            .filter(models.User.username == username,
-                    models.User.is_active.is_(True))
-            .first())
-    if user is None or not auth.verify_password(password, user.password_hash):
-        return render(request, "login.html", {"error": True}, status_code=401)
-    resp = RedirectResponse("/home", status_code=303)
-    resp.set_cookie(auth.SESSION_COOKIE, auth.make_session_token(user.id),
-                    httponly=True, samesite="lax")
-    return resp
-
-
-@router.get("/logout")
-def logout():
-    resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie(auth.SESSION_COOKIE)
-    return resp
 
 
 @router.get("/lang/{lang}")
@@ -58,9 +28,8 @@ def index():
 
 
 @router.get("/home", response_class=HTMLResponse)
-def dashboard(request: Request, db: Session = Depends(get_db),
-              user: models.User = Depends(get_current_user)):
-    wells = visible_wells_query(db, user).all()
+def dashboard(request: Request, db: Session = Depends(get_db)):
+    wells = db.query(models.Well).all()
     anchor = services.link_anchor(db)
     last = services.latest_measurements(db, [w.id for w in wells])
 
@@ -98,7 +67,7 @@ def dashboard(request: Request, db: Session = Depends(get_db),
             drops.append({"well": w, "drop": pct, "rate": m.flow_rate})
     drops.sort(key=lambda d: -d["drop"])
     return render(request, "dashboard.html",
-                  {"user": user, "kpi": kpi, "drops": drops[:12]})
+                  {"kpi": kpi, "drops": drops[:12]})
 
 
 # ---------- фонд скважин ----------
@@ -123,10 +92,9 @@ def wells_list(request: Request, q: str = "", sort: str = "number",
                dir: str = "asc", page: int = 1,
                gzu: int = 0, cdn: int = 0, wtype: str = "",
                link: str = "", wstatus: str = "",
-               db: Session = Depends(get_db),
-               user: models.User = Depends(get_current_user)):
+               db: Session = Depends(get_db)):
     anchor = services.link_anchor(db)
-    wells_q = visible_wells_query(db, user)
+    wells_q = db.query(models.Well).join(models.Gzu)
     if q.strip():
         needle = f"%{q.strip()}%"
         wells_q = wells_q.filter(models.Well.number.ilike(needle) |
@@ -175,7 +143,6 @@ def wells_list(request: Request, q: str = "", sort: str = "number",
     filters_qs = urlencode({"q": q, "gzu": gzu, "cdn": cdn, "wtype": wtype,
                             "link": link, "wstatus": wstatus})
     return render(request, "wells.html", {
-        "user": user,
         "rows": rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE],
         "total": total, "online_count": online_count,
         "page": page, "pages": pages, "q": q, "sort": sort, "dir": dir,
@@ -187,9 +154,8 @@ def wells_list(request: Request, q: str = "", sort: str = "number",
 
 
 @router.get("/wells/export.xlsx")
-def wells_export(db: Session = Depends(get_db),
-                 user: models.User = Depends(get_current_user)):
-    data = reports.wells_excel_export(db, user)
+def wells_export(db: Session = Depends(get_db)):
+    data = reports.wells_excel_export(db)
     return Response(
         data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -197,9 +163,8 @@ def wells_export(db: Session = Depends(get_db),
 
 
 @router.get("/wells/{well_id}", response_class=HTMLResponse)
-def well_detail(well_id: int, request: Request, db: Session = Depends(get_db),
-                user: models.User = Depends(get_current_user)):
-    well = visible_wells_query(db, user).filter(models.Well.id == well_id).first()
+def well_detail(well_id: int, request: Request, db: Session = Depends(get_db)):
+    well = db.query(models.Well).filter(models.Well.id == well_id).first()
     if well is None:
         return RedirectResponse("/wells", status_code=303)
     m = services.last_measurement(db, well.id)
@@ -218,7 +183,7 @@ def well_detail(well_id: int, request: Request, db: Session = Depends(get_db),
                 .filter(models.WellComment.well_id == well.id)
                 .order_by(models.WellComment.created_at.desc()).all())
     return render(request, "well_detail.html", {
-        "user": user, "well": well, "last": m,
+        "well": well, "last": m,
         "status": services.well_status(db, well),
         "prev_day": services.volume_for_period(
             db, well.id, ref - dt.timedelta(hours=24), ref + dt.timedelta(minutes=1)),
@@ -227,11 +192,10 @@ def well_detail(well_id: int, request: Request, db: Session = Depends(get_db),
 
 
 @router.post("/wells/{well_id}/comments")
-def add_comment(well_id: int, text: str = Form(...), db: Session = Depends(get_db),
-                user: models.User = Depends(get_current_user)):
-    well = visible_wells_query(db, user).filter(models.Well.id == well_id).first()
+def add_comment(well_id: int, text: str = Form(...), db: Session = Depends(get_db)):
+    well = db.query(models.Well).filter(models.Well.id == well_id).first()
     if well is not None and text.strip():
-        db.add(models.WellComment(well_id=well.id, author=user.full_name or user.username,
+        db.add(models.WellComment(well_id=well.id, author="Anonymous",
                                   text=text.strip()))
         db.commit()
     return RedirectResponse(f"/wells/{well_id}", status_code=303)
@@ -240,9 +204,8 @@ def add_comment(well_id: int, text: str = Form(...), db: Session = Depends(get_d
 # ---------- карта ----------
 
 @router.get("/map", response_class=HTMLResponse)
-def wells_map(request: Request, db: Session = Depends(get_db),
-              user: models.User = Depends(get_current_user)):
-    wells = visible_wells_query(db, user).all()
+def wells_map(request: Request, db: Session = Depends(get_db)):
+    wells = db.query(models.Well).all()
     statuses = services.bulk_statuses(db, wells)
     points = [{"number": w.number, "id": w.id,
                "lat": w.latitude, "lon": w.longitude,
@@ -252,16 +215,14 @@ def wells_map(request: Request, db: Session = Depends(get_db),
                  "online": g.is_online}
                 for g in db.query(models.Gateway).all()]
     return render(request, "map.html",
-                  {"user": user, "points": points, "gateways": gateways})
+                  {"points": points, "gateways": gateways})
 
 
 # ---------- радиоанализ (отдельный интерфейс, kk/en/ru — п. 2.1.3.4) ----------
 
 @router.get("/radio", response_class=HTMLResponse)
-def radio_analysis(request: Request, db: Session = Depends(get_db),
-                   user: models.User = Depends(get_current_user)):
+def radio_analysis(request: Request, db: Session = Depends(get_db)):
     return render(request, "radio.html", {
-        "user": user,
         "gw_stats": radio.gateway_signal_stats(db),
         "worst": radio.worst_gateways(db),
         "wrong_gw": radio.terminals_on_wrong_gateway(db),
@@ -274,33 +235,30 @@ def radio_analysis(request: Request, db: Session = Depends(get_db),
 # ---------- отчёты ----------
 
 @router.get("/reports", response_class=HTMLResponse)
-def reports_page(request: Request, user: models.User = Depends(get_current_user)):
-    return render(request, "reports.html", {"user": user})
+def reports_page(request: Request):
+    return render(request, "reports.html", {})
 
 
 @router.get("/reports/4h.xlsx")
-def report_4h(db: Session = Depends(get_db),
-              user: models.User = Depends(get_current_user)):
+def report_4h(db: Session = Depends(get_db)):
     stamp = dt.datetime.utcnow().strftime("%Y-%m-%d_%H%M")
     return Response(
-        reports.wells_report(db, user, 4),
+        reports.wells_report(db, None, 4),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=report_4h_{stamp}.xlsx"})
 
 
 @router.get("/reports/daily.xlsx")
-def report_daily(db: Session = Depends(get_db),
-                 user: models.User = Depends(get_current_user)):
+def report_daily(db: Session = Depends(get_db)):
     stamp = dt.datetime.utcnow().strftime("%Y-%m-%d")
     return Response(
-        reports.wells_report(db, user, 24),
+        reports.wells_report(db, None, 24),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=report_daily_{stamp}.xlsx"})
 
 
 @router.get("/reports/validation.xlsx")
-def report_validation(db: Session = Depends(get_db),
-                      user: models.User = Depends(auth.require_admin)):
+def report_validation(db: Session = Depends(get_db)):
     stamp = dt.datetime.utcnow().strftime("%Y-%m-%d")
     return Response(
         reports.validation_report(db),

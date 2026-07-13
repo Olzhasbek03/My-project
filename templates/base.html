@@ -9,26 +9,18 @@
 <body>
 <header class="topbar">
   <a class="brand" href="/home"><b>КВМ</b><small>мониторинг скважин</small></a>
-  {% if user is defined and user %}
   <nav>
     <a href="/home" class="{{ 'active' if request.url.path == '/home' }}">{{ t('dashboard') }}</a>
     <a href="/wells" class="{{ 'active' if request.url.path.startswith('/wells') }}">{{ t('wells') }}</a>
     <a href="/map" class="{{ 'active' if request.url.path == '/map' }}">{{ t('map') }}</a>
     <a href="/radio" class="{{ 'active' if request.url.path == '/radio' }}">{{ t('radio') }}</a>
     <a href="/reports" class="{{ 'active' if request.url.path.startswith('/reports') }}">{{ t('reports') }}</a>
-    {% if user.role == 'admin' %}
     <a href="/admin" class="{{ 'active' if request.url.path.startswith('/admin') }}">{{ t('admin') }}</a>
-    {% endif %}
   </nav>
-  {% endif %}
   <div class="right">
     <span class="langs">
       {% for l in languages %}<a href="/lang/{{ l }}" class="{{ 'active' if l == lang }}">{{ l|upper }}</a>{% endfor %}
     </span>
-    {% if user is defined and user %}
-    <span class="user">{{ user.full_name or user.username }}</span>
-    <a class="logout" href="/logout">{{ t('logout') }}</a>
-    {% endif %}
   </div>
 </header>
 <main>

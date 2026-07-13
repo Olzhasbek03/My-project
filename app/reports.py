@@ -49,7 +49,7 @@ def _write_headers(ws) -> None:
         ws.column_dimensions[cell.column_letter].width = 28
 
 
-def wells_report(db: Session, user: models.User, period_hours: int) -> bytes:
+def wells_report(db: Session, user: models.User | None, period_hours: int) -> bytes:
     """Четырёхчасовой (period_hours=4) или суточный (period_hours=24) отчёт:
     дебит по каждой скважине (включая нулевой), состояние и скважины со
     значительным снижением дебита за последние 4 часа."""
@@ -58,7 +58,10 @@ def wells_report(db: Session, user: models.User, period_hours: int) -> bytes:
     ws.title = "4h" if period_hours == 4 else "Daily"
     _write_headers(ws)
 
-    wells = visible_wells_query(db, user).order_by(models.Well.number).all()
+    if user:
+        wells = visible_wells_query(db, user).order_by(models.Well.number).all()
+    else:
+        wells = db.query(models.Well).order_by(models.Well.number).all()
     statuses = services.bulk_statuses(db, wells)
     last = services.latest_measurements(db, [w.id for w in wells])
     prev_flow = services.previous_flow(db, [w.id for w in wells])
@@ -133,7 +136,7 @@ def validation_report(db: Session) -> bytes:
     return buf.getvalue()
 
 
-def wells_excel_export(db: Session, user: models.User) -> bytes:
+def wells_excel_export(db: Session, user: models.User | None = None) -> bytes:
     """Выгрузка отображаемых данных фонда скважин из интерфейса в Excel
     (п. 2.1.3.3 ТЗ) — колонки соответствуют таблице портала."""
     wb = Workbook()
@@ -147,7 +150,10 @@ def wells_excel_export(db: Session, user: models.User) -> bytes:
         cell = ws.cell(row=1, column=c, value=name)
         cell.font = _bold
         ws.column_dimensions[cell.column_letter].width = 20
-    wells = visible_wells_query(db, user).order_by(models.Well.number).all()
+    if user:
+        wells = visible_wells_query(db, user).order_by(models.Well.number).all()
+    else:
+        wells = db.query(models.Well).order_by(models.Well.number).all()
     anchor = services.link_anchor(db)
     last = services.latest_measurements(db, [w.id for w in wells])
     prev_flow = services.previous_flow(db, [w.id for w in wells])
