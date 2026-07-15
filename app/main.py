@@ -6,8 +6,7 @@ import asyncio
 import contextlib
 import logging
 
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from . import config
@@ -36,8 +35,3 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(pages.router)
 app.include_router(admin.router)
 app.include_router(api.router)
-
-
-@app.exception_handler(307)
-async def redirect_handler(request: Request, exc):
-    return RedirectResponse(exc.headers.get("Location", "/login"))

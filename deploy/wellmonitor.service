@@ -1,0 +1,26 @@
+# systemd-юнит для развёртывания без Docker (п. 3.9 ТЗ).
+# Установка:
+#   sudo cp deploy/wellmonitor.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wellmonitor
+#
+# Предполагается: код в /opt/wellmonitor, virtualenv в /opt/wellmonitor/.venv,
+# PostgreSQL развёрнут отдельно. Переменные окружения — в /etc/wellmonitor.env.
+[Unit]
+Description=Программный комплекс мониторинга скважин (KBM)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=wellmonitor
+Group=wellmonitor
+WorkingDirectory=/opt/wellmonitor
+EnvironmentFile=/etc/wellmonitor.env
+ExecStartPre=/opt/wellmonitor/.venv/bin/python -c "from app.bootstrap import ensure_data; ensure_data()"
+ExecStart=/opt/wellmonitor/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

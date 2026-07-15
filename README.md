@@ -104,36 +104,55 @@ float32 температура | uint8 авария | uint16 батарея, м�
 | `WELLAPP_OFFLINE_MINUTES` | порог «передатчик оффлайн» | 180 |
 | `WELLAPP_RATE_DROP_PCT` | порог значительного снижения дебита | 30 |
 
-## Деплой на Vercel (демо)
+## Развёртывание в закрытом контуре Заказчика (п. 3.9 ТЗ)
 
-Репозиторий готов к деплою: `vercel.json` + ASGI-точка входа `api/index.py`.
-При холодном старте пустая база в `/tmp` автоматически наполняется из
-`data/wells_export.csv`.
+Комплекс разворачивается **внутри локальной сети предприятия** (напр.
+`10.100.48.x`), рядом с сервером ChirpStack, без выхода в интернет. Внешние
+CDN не используются — шрифты и стили вшиты в репозиторий.
+
+### Вариант 1 — Docker Compose (рекомендуется)
+
+Приложение + PostgreSQL с постоянным хранением одной командой:
 
 ```bash
-npm i -g vercel
-vercel login          # вход в аккаунт
-vercel --prod
+cp .env.example .env          # задать пароли и WELLAPP_SECRET_KEY
+docker compose up -d --build
 ```
 
-Либо через vercel.com: **Add New → Project → Import Git Repository** и выбрать
-этот репозиторий — настройки подхватятся из `vercel.json` автоматически.
+При первом старте фонд скважин (2420 скважин) автоматически наполняется из
+`data/wells_export.csv`. Портал доступен в локальной сети на порту `8000`;
+СУБД наружу не публикуется.
 
-Ограничения serverless-режима (демо): SQLite в `/tmp` эфемерна — комментарии
-и правки админки живут до перезапуска инстанса (для постоянного хранения
-задайте `WELLAPP_DATABASE_URL` на облачный Postgres, например Neon);
-фоновый планировщик отчётов не работает — рассылка запускается Vercel Cron
-через `GET /api/cron/reports?kind=4h|daily|validation`.
+### Вариант 2 — systemd (без Docker)
 
-## Развёртывание на облачном сервере Заказчика (п. 3.9 ТЗ)
-
-Комплекс — одно ASGI-приложение; для продуктива:
+Готовый юнит — `deploy/wellmonitor.service` (PostgreSQL разворачивается
+отдельно):
 
 ```bash
-WELLAPP_DATABASE_URL=postgresql+psycopg2://app:***@db:5432/wells \
-WELLAPP_SECRET_KEY=$(openssl rand -hex 32) \
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+python -m venv /opt/wellmonitor/.venv
+/opt/wellmonitor/.venv/bin/pip install -r requirements.txt
+sudo cp deploy/wellmonitor.service /etc/systemd/system/
+# WELLAPP_DATABASE_URL, WELLAPP_SECRET_KEY и пр. — в /etc/wellmonitor.env
+sudo systemctl enable --now wellmonitor
+```
+
+### Приём телеметрии со стороны ChirpStack
+
+В ChirpStack (**Application → Integrations → HTTP**) укажите endpoint портала
+в локальной сети:
+
+```
+POST http://<ip-сервера-портала>:8000/api/uplink
 ```
 
 Требования ТЗ к серверу (Xeon ≥10 ядер, ≥32 ГБ ОЗУ, RAID10, Ubuntu 20.04)
 покрываются с запасом.
+
+## Демо-деплой на Vercel (необязательно)
+
+Для быстрой демонстрации интерфейса без доступа к закрытому контуру
+репозиторий также содержит `vercel.json` + `api/index.py`; при холодном
+старте эфемерная SQLite в `/tmp` наполняется из `data/wells_export.csv`.
+Это **только витрина интерфейса** — приём телеметрии из внутренней сети
+ChirpStack в этом режиме невозможен, а хранение эфемерно. Для продуктива
+используйте развёртывание в закрытом контуре (выше).

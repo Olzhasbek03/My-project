@@ -1,0 +1,47 @@
+# Развёртывание в закрытом контуре Заказчика (сеть 10.100.48.x), без выхода в
+# интернет. Комплекс мониторинга скважин + PostgreSQL с постоянным хранением.
+#
+#   docker compose up -d --build
+#
+# ChirpStack (Application → Integrations → HTTP) шлёт uplink на:
+#   http://<ip-этого-сервера>:8000/api/uplink
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wells}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wells}
+      POSTGRES_DB: ${POSTGRES_DB:-wells}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wells}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Порт наружу не публикуется — доступ к СУБД только внутри compose-сети
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WELLAPP_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-wells}:${POSTGRES_PASSWORD:-wells}@db:5432/${POSTGRES_DB:-wells}
+      WELLAPP_SECRET_KEY: ${WELLAPP_SECRET_KEY:-change-me-in-production}
+      WELLAPP_CHIRPSTACK_TOKEN: ${WELLAPP_CHIRPSTACK_TOKEN:-}
+      WELLAPP_OFFLINE_MINUTES: ${WELLAPP_OFFLINE_MINUTES:-180}
+      WELLAPP_RATE_DROP_PCT: ${WELLAPP_RATE_DROP_PCT:-30}
+      WELLAPP_SMTP_HOST: ${WELLAPP_SMTP_HOST:-}
+      WELLAPP_SMTP_PORT: ${WELLAPP_SMTP_PORT:-587}
+      WELLAPP_SMTP_USER: ${WELLAPP_SMTP_USER:-}
+      WELLAPP_SMTP_PASSWORD: ${WELLAPP_SMTP_PASSWORD:-}
+      WELLAPP_SMTP_FROM: ${WELLAPP_SMTP_FROM:-monitoring@kbm.kz}
+    ports:
+      # Порт доступен в локальной сети предприятия; наружу не выставляется
+      - "8000:8000"
+
+volumes:
+  pgdata:
