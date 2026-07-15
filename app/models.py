@@ -123,6 +123,22 @@ class UplinkFrame(Base):
     distance_km: Mapped[float] = mapped_column(Float, default=0.0)  # терминал → БС
 
 
+class RawUplink(Base):
+    """Сырой uplink-пакет как есть, до декодирования. Служит журналом для
+    обратной разработки формата пакета (ChirpStack без кодека, декодирование
+    на нашей стороне) — по сопоставлению raw_hex с известными значениями
+    портала калибруются раскладки в app/decoder.py. Сохраняется всегда,
+    даже если пакет не удалось декодировать."""
+    __tablename__ = "raw_uplink"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dev_eui: Mapped[str] = mapped_column(String(23), index=True)
+    received_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    fport: Mapped[int] = mapped_column(Integer, default=0)
+    fcnt: Mapped[int] = mapped_column(Integer, default=0)
+    raw_hex: Mapped[str] = mapped_column(String(255), default="")   # полезная нагрузка в hex
+    decoded: Mapped[bool] = mapped_column(Boolean, default=False)   # удалось ли распознать поля
+
+
 class WellComment(Base):
     """Комментарий по скважине с историей: дата, время, автор (п. 2.1.3.3 ТЗ)."""
     __tablename__ = "well_comment"

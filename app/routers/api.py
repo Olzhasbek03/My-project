@@ -12,13 +12,12 @@
 """
 import base64
 import datetime as dt
-import struct
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .. import config, models, radio, services
+from .. import config, decoder, models, radio, services
 from ..database import get_db
 
 router = APIRouter(prefix="/api")
@@ -32,6 +31,10 @@ class RxInfo(BaseModel):
     loRaSNR: float = 0
 
 
+class TxInfo(BaseModel):
+    frequency: int = 0                  # Гц
+
+
 class UplinkEvent(BaseModel):
     """Событие "up" HTTP-интеграции ChirpStack v3."""
     devEUI: str
@@ -39,33 +42,13 @@ class UplinkEvent(BaseModel):
     fPort: int = 1
     data: str = ""                      # base64-полезная нагрузка
     rxInfo: list[RxInfo] = Field(default_factory=list)
+    txInfo: TxInfo = Field(default_factory=TxInfo)
     objectJSON: str = ""
 
 
 def _check_token(authorization: str | None) -> None:
     if config.CHIRPSTACK_API_TOKEN and authorization != f"Bearer {config.CHIRPSTACK_API_TOKEN}":
         raise HTTPException(status_code=401, detail="Неверный токен интеграции")
-
-
-def decode_payload(raw: bytes) -> dict:
-    """Бинарный формат терминала (little-endian):
-    float32 flow_rate | float32 cumulative_total | float32 pressure |
-    float32 temperature | uint8 alarm | uint16 battery_mV.
-    Короткие пакеты допускаются — отсутствующие поля пропускаются."""
-    out: dict = {}
-    if len(raw) >= 4:
-        out["flow_rate"] = struct.unpack_from("<f", raw, 0)[0]
-    if len(raw) >= 8:
-        out["cumulative_total"] = struct.unpack_from("<f", raw, 4)[0]
-    if len(raw) >= 12:
-        out["pressure"] = struct.unpack_from("<f", raw, 8)[0]
-    if len(raw) >= 16:
-        out["temperature"] = struct.unpack_from("<f", raw, 12)[0]
-    if len(raw) >= 17:
-        out["alarm"] = bool(raw[16])
-    if len(raw) >= 19:
-        out["battery_v"] = struct.unpack_from("<H", raw, 17)[0] / 1000
-    return out
 
 
 @router.post("/uplink")
@@ -83,12 +66,24 @@ def chirpstack_uplink(event: UplinkEvent, db: Session = Depends(get_db),
     device.last_seen_at = now
 
     raw = base64.b64decode(event.data) if event.data else b""
-    decoded = decode_payload(raw)
+    meter_type = device.well.meter_type if device.well else None
+    decoded = decoder.decode(raw, event.fPort, meter_type)
     if "battery_v" in decoded:
         device.battery_v = decoded["battery_v"]
 
+    # Сырой пакет сохраняется ВСЕГДА — журнал для обратной разработки формата
+    # (ChirpStack без кодека). По raw_hex калибруются раскладки decoder.py.
+    field_keys = [k for k in decoded if not k.startswith("_")]
+    db.add(models.RawUplink(
+        dev_eui=event.devEUI, received_at=now,
+        fport=event.fPort, fcnt=event.fCnt,
+        raw_hex=raw.hex().upper(),
+        decoded=bool(field_keys),
+    ))
+
     # Радиокадры для модуля радиоанализа — сохраняются всегда,
     # в том числе пустые пакеты (п. 2.1.3.4-e ТЗ)
+    freq_mhz = event.txInfo.frequency / 1e6 if event.txInfo.frequency else 868.1
     gateways = {g.gateway_id: g for g in db.query(models.Gateway).all()}
     for rx in event.rxInfo:
         gw = gateways.get(rx.gatewayID)
@@ -100,23 +95,30 @@ def chirpstack_uplink(event: UplinkEvent, db: Session = Depends(get_db),
             gw.last_seen_at = now
             gw.is_online = True
         db.add(models.UplinkFrame(dev_eui=event.devEUI, gateway_id=rx.gatewayID,
-                                  rssi=rx.rssi, snr=rx.loRaSNR,
+                                  rssi=rx.rssi, snr=rx.loRaSNR, frequency=freq_mhz,
                                   payload_size=len(raw), distance_km=distance))
 
+    # Измерение создаётся только когда раскладка распознала числовые поля.
+    # До калибровки decoder возвращает пусто — пакеты копятся в raw_uplink.
     measurement_id = None
-    if device.well and decoded:
+    if device.well and field_keys:
         prev = services.last_measurement(db, device.well_id)
+        new_total = decoded.get("cumulative_total")
         m = models.Measurement(
             well_id=device.well_id,
             measured_at=now,
             received_at=now,
             flow_rate=round(decoded.get("flow_rate", 0.0), 3),
-            cumulative_total=round(decoded.get("cumulative_total", 0.0), 3),
+            cumulative_total=round(new_total or 0.0, 3),
             pressure=decoded.get("pressure"),
             temperature=decoded.get("temperature"),
             alarm=decoded.get("alarm", False),
         )
-        m.is_valid = services.validate_measurement(m, prev)
+        # Валидация: правило существующей системы (скачок накопленного
+        # расхода > 100000 — «TRASH PACKET») + прочие проверки services.
+        prev_total = prev.cumulative_total if prev else None
+        m.is_valid = (services.validate_measurement(m, prev)
+                      and decoder.valid_accumulated_delta(new_total, prev_total))
         db.add(m)
         db.flush()
         measurement_id = m.id
