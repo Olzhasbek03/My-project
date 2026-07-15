@@ -98,10 +98,11 @@ def chirpstack_uplink(event: UplinkEvent, db: Session = Depends(get_db),
                                   rssi=rx.rssi, snr=rx.loRaSNR, frequency=freq_mhz,
                                   payload_size=len(raw), distance_km=distance))
 
-    # Измерение создаётся только когда раскладка распознала числовые поля.
-    # До калибровки decoder возвращает пусто — пакеты копятся в raw_uplink.
+    # Измерение создаётся только когда раскладка ОТКАЛИБРОВАНА и распознала
+    # числовые поля. До калибровки decoder не возвращает подтверждённых полей —
+    # пакеты просто копятся в raw_uplink, ложные (нулевые) замеры не пишутся.
     measurement_id = None
-    if device.well and field_keys:
+    if device.well and decoded.get("_calibrated") and field_keys:
         prev = services.last_measurement(db, device.well_id)
         new_total = decoded.get("cumulative_total")
         m = models.Measurement(
