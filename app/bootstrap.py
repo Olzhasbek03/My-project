@@ -6,14 +6,24 @@
 """
 import logging
 import os
+import shutil
 
-from . import models
+from . import config, models
 from .database import Base, SessionLocal, engine
 
 log = logging.getLogger("wellapp.bootstrap")
 
 
 def ensure_data() -> None:
+    # Serverless (Vercel): мгновенный холодный старт — копируем готовую demo.db
+    # в эфемерную /tmp вместо ~5-секундного импорта CSV на каждом инстансе.
+    if config.IS_SERVERLESS:
+        tmp_db = "/tmp/app.db"
+        prebuilt = os.path.join(os.path.dirname(__file__), "..", "data", "demo.db")
+        if not os.path.exists(tmp_db) and os.path.exists(prebuilt):
+            shutil.copy(prebuilt, tmp_db)
+            log.info("Скопирована готовая demo.db → %s", tmp_db)
+
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         if db.query(models.Well).count() > 0:

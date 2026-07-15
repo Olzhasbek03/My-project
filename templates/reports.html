@@ -12,12 +12,10 @@
     <h3>{{ t('daily_report') }}</h3>
     <a class="btn" href="/reports/daily.xlsx">⬇ {{ t('download') }}</a>
   </div>
-  {% if user.role == 'admin' %}
   <div class="report-item">
     <p class="eyebrow">RU / EN / 中文 · .xlsx</p>
     <h3>{{ t('validation_report') }}</h3>
     <a class="btn" href="/reports/validation.xlsx">⬇ {{ t('download') }}</a>
   </div>
-  {% endif %}
 </div>
 {% endblock %}
