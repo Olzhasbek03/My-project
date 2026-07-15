@@ -109,9 +109,22 @@ FLOWMETER_LAYOUTS: dict[str, PayloadLayout] = {
     ]),
 }
 
-# Раскладка VFD-пакета (данные ЧРП, до 10 регистров Modbus 16-bit) — ГИПОТЕЗА.
+# Раскладка composite-пакета (FPort 2, 13 байт: накопленный расход + VFD).
+# Подтверждено реальным образцом скважины 1000:
+#   00 00 00 00 | 00 00 | 01 00 | 01 EE 79 EF FC
+#   └ накопл. ┘   ?       маркер   └── VFD-хвост ──┘
+# Смещение поля накопленного расхода (0–3) подтверждено структурно; масштаб и
+# порядок байт ждут «живого» (ненулевого) образца — образец 1000 был нулевым.
+COMPOSITE_LAYOUT = PayloadLayout("composite (flowmeter+VFD)", [
+    # Накопленный расход: offset подтверждён, scale/endian — ГИПОТЕЗА.
+    FieldSpec("cumulative_total", offset=0, fmt="I", endian="<",
+              scale=1.0, confirmed=False),
+    # VFD-хвост (смещения 8–12) — регистры ЧРП; раскладка ждёт образцов.
+])
+
+# Раскладка чистого VFD-пакета (данные ЧРП, до 10 регистров Modbus 16-bit).
 VFD_LAYOUT = PayloadLayout("VFD / ЧРП", [
-    # TODO: подтвердить образцами. Пакет ≈ 13 байт, маркер 01 00.
+    # TODO: подтвердить образцами.
 ])
 
 
@@ -119,15 +132,17 @@ VFD_LAYOUT = PayloadLayout("VFD / ЧРП", [
 # Диспетчеризация
 # --------------------------------------------------------------------------
 
-# FPort → тип сообщения. Требует подтверждения (гипотеза по наблюдениям).
+# FPort → тип сообщения (по наблюдениям):
+#   FPort 2 — рабочий composite-пакет (накопл. расход + VFD), 13 байт;
+#   FPort 5 — только первый пакет после подключения (FCnt 0), стартовое/TS.
 FPORT_MESSAGE_TYPE = {
-    2: "flowmeter",
-    5: "vfd",
+    2: "composite",
+    5: "ts",
 }
 
 
 def message_type(fport: int) -> str:
-    return FPORT_MESSAGE_TYPE.get(fport, "flowmeter")
+    return FPORT_MESSAGE_TYPE.get(fport, "composite")
 
 
 def meter_family(meter_type: str | None) -> str:
@@ -137,7 +152,10 @@ def meter_family(meter_type: str | None) -> str:
 
 
 def layout_for(fport: int, meter_type: str | None) -> PayloadLayout:
-    if message_type(fport) == "vfd":
+    kind = message_type(fport)
+    if kind == "composite":
+        return COMPOSITE_LAYOUT
+    if kind == "vfd":
         return VFD_LAYOUT
     return FLOWMETER_LAYOUTS.get(meter_family(meter_type),
                                  FLOWMETER_LAYOUTS["SKG"])
