@@ -13,6 +13,7 @@
     <a href="/home" class="{{ 'active' if request.url.path == '/home' }}">{{ t('dashboard') }}</a>
     <a href="/wells" class="{{ 'active' if request.url.path.startswith('/wells') }}">{{ t('wells') }}</a>
     <a href="/map" class="{{ 'active' if request.url.path == '/map' }}">{{ t('map') }}</a>
+    <a href="/predict" class="{{ 'active' if request.url.path == '/predict' }}">{{ t('predict') }}</a>
     <a href="/radio" class="{{ 'active' if request.url.path == '/radio' }}">{{ t('radio') }}</a>
     <a href="/reports" class="{{ 'active' if request.url.path.startswith('/reports') }}">{{ t('reports') }}</a>
     <a href="/admin" class="{{ 'active' if request.url.path.startswith('/admin') }}">{{ t('admin') }}</a>

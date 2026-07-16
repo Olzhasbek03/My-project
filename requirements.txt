@@ -6,3 +6,6 @@ openpyxl>=3.1
 python-multipart>=0.0.9
 itsdangerous>=2.1
 psycopg2-binary>=2.9
+# ИИ-советник (/predict): пакет опционален — без ключа WELLAPP_AI_API_KEY
+# работает встроенный экспертный движок, полностью офлайн
+anthropic>=0.40

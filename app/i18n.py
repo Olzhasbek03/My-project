@@ -12,6 +12,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "map": {"ru": "Карта", "kk": "Карта", "en": "Map", "zh": "地图"},
     "radio": {"ru": "Радиоанализ", "kk": "Радиоталдау", "en": "Radio Analysis", "zh": "无线电分析"},
     "reports": {"ru": "Отчёты", "kk": "Есептер", "en": "Reports", "zh": "报告"},
+    "predict": {"ru": "Прогнозы", "kk": "Болжамдар", "en": "Predictive", "zh": "预测分析"},
     "admin": {"ru": "Администрирование", "kk": "Әкімшілендіру", "en": "Administration", "zh": "管理"},
     "logout": {"ru": "Выход", "kk": "Шығу", "en": "Log out", "zh": "登出"},
     "login": {"ru": "Вход", "kk": "Кіру", "en": "Log in", "zh": "登录"},

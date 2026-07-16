@@ -38,3 +38,10 @@ RATE_DROP_THRESHOLD_PCT = float(os.environ.get("WELLAPP_RATE_DROP_PCT", "30"))
 # Языки интерфейса (п. 2.1.3.3 ТЗ)
 LANGUAGES = ["ru", "kk", "en", "zh"]
 DEFAULT_LANGUAGE = "ru"
+
+# ИИ-советник (страница /predict). Встроенный экспертный анализ работает
+# всегда и полностью офлайн (закрытый контур). Если задать ключ Anthropic API —
+# рекомендации дополнительно формулирует Claude (нужен выход в интернет).
+AI_API_KEY = os.environ.get("WELLAPP_AI_API_KEY",
+                            os.environ.get("ANTHROPIC_API_KEY", ""))
+AI_MODEL = os.environ.get("WELLAPP_AI_MODEL", "claude-opus-4-8")

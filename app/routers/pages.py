@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from .. import config, models, radio, reports, services
+from .. import advisor, config, models, predict, radio, reports, services
 from ..database import get_db
 from ..templating import render
 
@@ -316,6 +316,62 @@ def add_comment(well_id: int, text: str = Form(...), db: Session = Depends(get_d
                                   text=text.strip()))
         db.commit()
     return RedirectResponse(f"/wells/{well_id}", status_code=303)
+
+
+# ---------- предиктивный анализ ----------
+
+@router.get("/predict", response_class=HTMLResponse)
+def predict_page(request: Request, window: int = 4, gzu: int = 0, well: int = 0,
+                 db: Session = Depends(get_db)):
+    """Динамика добычи за 4/24 ч + ИИ-советник.
+
+    Уровни: флот (все ГЗУ) → ГЗУ (его скважины) → скважина (тренд и прогноз).
+    """
+    window = 24 if window == 24 else 4
+    ctx: dict = {"window": window, "ai_enabled": advisor.ai_enabled(),
+                 "level": "fleet", "gzu_id": gzu, "well_id": well}
+
+    if well:
+        w = db.get(models.Well, well)
+        if w is None:
+            return RedirectResponse(f"/predict?window={window}", status_code=303)
+        row = predict.well_changes(db, [w], window)[0]
+        forecast = predict.well_forecast(db, w, window)
+        recs = advisor.advise_well(row, forecast, window)
+        ctx.update({
+            "level": "well", "well": w, "row": row, "forecast": forecast,
+            "recs": recs, "gzu_id": w.gzu_id, "gzu_name": w.gzu.name,
+            "ai_text": advisor.ai_narrative(
+                f"well:{w.id}:{window}",
+                {"скважина": row, "прогноз": forecast, "правила": recs}),
+        })
+    elif gzu:
+        g = db.get(models.Gzu, gzu)
+        if g is None:
+            return RedirectResponse(f"/predict?window={window}", status_code=303)
+        rows = predict.well_changes(db, list(g.wells), window)
+        rows.sort(key=lambda r: (r["delta"] is None, r["delta"] or 0))
+        recs = advisor.advise_gzu(g.name, rows, window)
+        ctx.update({
+            "level": "gzu", "gzu_name": g.name, "cdn_name": g.cdn.name,
+            "rows": rows, "recs": recs,
+            "max_abs": max((abs(r["delta"]) for r in rows
+                            if r["delta"] is not None), default=1) or 1,
+            "ai_text": advisor.ai_narrative(
+                f"gzu:{g.id}:{window}",
+                {"ГЗУ": g.name, "скважины": rows[:40], "правила": recs}),
+        })
+    else:
+        rows = predict.gzu_changes(db, window)
+        recs = advisor.advise_fleet(rows, window)
+        ctx.update({
+            "rows": rows, "recs": recs,
+            "max_abs": max((abs(r["delta"]) for r in rows
+                            if r["delta"] is not None), default=1) or 1,
+            "ai_text": advisor.ai_narrative(
+                f"fleet:{window}", {"ГЗУ": rows, "правила": recs}),
+        })
+    return render(request, "predict.html", ctx)
 
 
 # ---------- карта ----------

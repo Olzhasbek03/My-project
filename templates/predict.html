@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% macro delta_cell(r) -%}
+  {% if r.delta is none %}<span class="nodata">нет данных</span>
+  {% else %}
+    <span class="num {{ 'dv-neg-t' if r.delta < 0 else 'dv-pos-t' if r.delta > 0 else 'muted' }}">
+      {{ '%+.1f'|format(r.delta) }}</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro dv_bar(r, max_abs) -%}
+  <div class="dv-track">
+    {% if r.delta is not none and r.delta != 0 %}
+      {% set w = (r.delta|abs / max_abs * 50) %}
+      <i class="{{ 'dv-neg' if r.delta < 0 else 'dv-pos' }}"
+         style="width: {{ '%.1f'|format(w if w > 1.5 else 1.5) }}%;
+                {{ 'right: 50%' if r.delta < 0 else 'left: 50%' }}"></i>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ t('predict') }}</h1>
+  <div class="win-toggle">
+    {% set qs_gzu = '&gzu=' ~ gzu_id if level == 'gzu' else '' %}
+    {% set qs_well = '&well=' ~ well_id if level == 'well' else '' %}
+    <a href="?window=4{{ qs_gzu }}{{ qs_well }}" class="{{ 'on' if window == 4 }}">4 часа</a>
+    <a href="?window=24{{ qs_gzu }}{{ qs_well }}" class="{{ 'on' if window == 24 }}">24 часа</a>
+  </div>
+</div>
+
+<p class="crumbs">
+  <a href="?window={{ window }}">Все ГЗУ</a>
+  {% if level in ('gzu', 'well') %} → <a href="?window={{ window }}&gzu={{ gzu_id }}">{{ gzu_name }}</a>{% endif %}
+  {% if level == 'well' %} → Скважина {{ well.number }}{% endif %}
+</p>
+
+{# ---------- ИИ-советник: единственная персиковая карточка страницы ---------- #}
+<section class="ai-card">
+  <p class="ai-eyebrow">ИИ-советник {{ '· Claude' if ai_enabled else '· экспертный движок' }}</p>
+  {% if ai_text %}
+  <div class="ai-text">{{ ai_text }}</div>
+  {% endif %}
+  <div class="rec-list">
+    {% for r in recs %}
+    <div class="rec">
+      <i class="sev sev-{{ r.severity }}"></i>
+      <div>
+        <b>{{ r.title }}</b>
+        <p>{{ r.detail }}</p>
+        {% if r.actions %}
+        <ul>{% for a in r.actions %}<li>{{ a }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if level == 'fleet' %}
+<h2>Изменение добычи по ГЗУ <span class="muted">за {{ window }} ч, т/сут</span></h2>
+<table class="dv-table">
+  <tr><th>ГЗУ</th><th>Цех</th><th class="dv-col">Δ добычи</th><th>Δ, т/сут</th><th>%</th>
+      <th>Было → стало</th><th>Скв. (пар)</th><th>Падает</th><th>Оффлайн</th></tr>
+  {% for g in rows %}
+  <tr>
+    <td><a href="?window={{ window }}&gzu={{ g.id }}">{{ g.name }}</a></td>
+    <td class="muted">{{ g.cdn }}</td>
+    <td class="dv-col">{{ dv_bar(g, max_abs) }}</td>
+    <td>{{ delta_cell(g) }}</td>
+    <td class="num muted">{{ g.pct ~ '%' if g.pct is not none else '—' }}</td>
+    <td class="num muted">{{ g.q_prev }} → {{ g.q_now }}</td>
+    <td class="num">{{ g.wells }} ({{ g.paired }})</td>
+    <td class="num {{ 'dv-neg-t' if g.falling }}">{{ g.falling or '—' }}</td>
+    <td class="num {{ 'dv-neg-t' if g.offline }}">{{ g.offline or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% elif level == 'gzu' %}
+<h2>{{ gzu_name }} <span class="muted">· {{ cdn_name }} · изменение за {{ window }} ч</span></h2>
+<table class="dv-table">
+  <tr><th>Скважина</th><th>Тип</th><th>Связь</th><th class="dv-col">Δ дебита</th>
+      <th>Δ, т/сут</th><th>%</th><th>Было → стало</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="?window={{ window }}&well={{ r.id }}">{{ r.number }}</a></td>
+    <td class="muted">{{ r.well_type }}</td>
+    <td><span class="dot {{ 'on' if r.online else 'off' }}"></span></td>
+    <td class="dv-col">{{ dv_bar(r, max_abs) }}</td>
+    <td>{{ delta_cell(r) }}</td>
+    <td class="num muted">{{ r.pct ~ '%' if r.pct is not none else '—' }}</td>
+    <td class="num muted">
+      {{ r.q_prev if r.q_prev is not none else '—' }} → {{ r.q_now if r.q_now is not none else '—' }}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% elif level == 'well' %}
+<h2>Скважина {{ well.number }}
+  <span class="muted">· {{ gzu_name }} · {{ well.well_type }} · {{ well.meter_type }}</span></h2>
+
+<div class="cards">
+  <div class="card">
+    <h3>Дебит, т/сут</h3>
+    <p class="big num">{{ row.q_now if row.q_now is not none else '—' }}</p>
+    <p>Было ({{ window }} ч назад): {{ row.q_prev if row.q_prev is not none else '—' }}</p>
+    <p>Изменение: {{ delta_cell(row) }} {{ '(' ~ row.pct ~ '%)' if row.pct is not none else '' }}</p>
+  </div>
+  <div class="card">
+    <h3>Прогноз через {{ window }} ч</h3>
+    <p class="big num">{{ forecast.projected if forecast.projected is not none else '—' }}</p>
+    <p>Тренд: {{ '%+.2f'|format(forecast.slope_per_h) ~ ' т/сут·ч' if forecast.slope_per_h is not none else 'недостаточно замеров' }}</p>
+    <p>Линейная экстраполяция последних замеров</p>
+  </div>
+  <div class="card">
+    <h3>Связь</h3>
+    <p class="big"><span class="dot {{ 'on' if row.online else 'off' }}"></span>
+       {{ 'онлайн' if row.online else 'оффлайн' }}</p>
+    <p>Статус работы: {{ row.work_status or '—' }}</p>
+    <p><a href="/wells/{{ well.id }}">Карточка скважины →</a></p>
+  </div>
+</div>
+
+<h2>Замеры и прогноз <span class="muted">пунктир — экстраполяция</span></h2>
+<div class="chart-card"><div id="ch-series"></div></div>
+
+<script>
+(function () {
+  const F = {{ forecast | tojson }};
+  const css = getComputedStyle(document.documentElement);
+  const SIENNA = css.getPropertyValue('--sienna').trim();
+  const INK = css.getPropertyValue('--ink').trim();
+  const ASH = css.getPropertyValue('--ash').trim();
+  const LINE = css.getPropertyValue('--hairline').trim();
+  const box = document.getElementById('ch-series');
+  const pts = F.points.slice(-10);
+  if (!pts.length) { box.className = 'chart-empty'; box.textContent = 'Нет замеров за 72 ч'; return; }
+  const items = pts.map(p => ({label: p.t, value: p.q, proj: false}));
+  if (F.projected !== null) items.push({label: '+' + F.window_h + 'ч (прогноз)', value: F.projected, proj: true});
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (n, at) => { const e = document.createElementNS(NS, n);
+    for (const k in at) e.setAttribute(k, at[k]); return e; };
+  const W = 900, PH = 150, AX = 34, H = PH + AX;
+  const max = Math.max(...items.map(d => d.value), 0.1);
+  const slot = W / items.length, BW = Math.min(26, slot * 0.5);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%' });
+  svg.appendChild(el('line', { x1: 0, y1: PH, x2: W, y2: PH, stroke: LINE, 'stroke-width': 1 }));
+  items.forEach((d, i) => {
+    const cx = i * slot + slot / 2;
+    const h = d.value > 0 ? Math.max(d.value / max * (PH - 28), 3) : 0;
+    if (h > 0) {
+      const bar = el('path', { d:
+        `M${cx - BW / 2},${PH} v-${h - 4} a4,4 0 0 1 4,-4 h${BW - 8} a4,4 0 0 1 4,4 v${h - 4} z`,
+        fill: d.proj ? 'none' : SIENNA });
+      if (d.proj) { bar.setAttribute('stroke', SIENNA);
+        bar.setAttribute('stroke-width', 2); bar.setAttribute('stroke-dasharray', '5 4'); }
+      svg.appendChild(bar);
+    }
+    const val = el('text', { x: cx, y: PH - h - 8, 'text-anchor': 'middle',
+      'font-size': 12.5, fill: INK, 'font-weight': 480 });
+    val.textContent = d.value;
+    const lbl = el('text', { x: cx, y: PH + 18, 'text-anchor': 'middle',
+      'font-size': 11, fill: ASH });
+    lbl.textContent = d.label;
+    svg.append(val, lbl);
+  });
+  box.appendChild(svg);
+})();
+</script>
+{% endif %}
+{% endblock %}
