@@ -19,27 +19,29 @@ const minLon = Math.min(...lons), maxLon = Math.max(...lons);
 const pad = 40, W = 1220, H = 680;
 const x = lon => pad + (lon - minLon) / ((maxLon - minLon) || 1) * (W - 2 * pad);
 const y = lat => H - pad - (lat - minLat) / ((maxLat - minLat) || 1) * (H - 2 * pad);
-const colors = {in_operation: '#2bbf8f', stopped: '#ffb829', offline: '#e5484d'};
+const colors = {in_operation: '#2e7d5c', stopped: '#a06423', offline: '#b0402a'};
 const ns = 'http://www.w3.org/2000/svg';
-points.forEach(p => {
+points.forEach((p, i) => {
   const a = document.createElementNS(ns, 'a');
   a.setAttribute('href', '/wells/' + p.id);
   const c = document.createElementNS(ns, 'circle');
   c.setAttribute('cx', x(p.lon)); c.setAttribute('cy', y(p.lat)); c.setAttribute('r', 3.2);
-  c.setAttribute('fill', colors[p.status] || '#666');
+  c.setAttribute('fill', colors[p.status] || '#a3a6af');
   c.setAttribute('fill-opacity', '0.85');
+  c.style.cssText = 'opacity:0;transition:opacity .5s ease ' + Math.min(i * 0.4, 900) + 'ms';
   const t = document.createElementNS(ns, 'title');
   t.textContent = p.number + ' — ' + p.status;
   c.appendChild(t);
   a.appendChild(c);
   svg.appendChild(a);
+  requestAnimationFrame(() => requestAnimationFrame(() => { c.style.opacity = 1; }));
 });
 gateways.forEach(g => {
   const r = document.createElementNS(ns, 'rect');
   r.setAttribute('x', x(g.lon) - 6); r.setAttribute('y', y(g.lat) - 6);
   r.setAttribute('width', 12); r.setAttribute('height', 12);
-  r.setAttribute('rx', 3);
-  r.setAttribute('fill', g.online ? '#8052ff' : '#555');
+  r.setAttribute('rx', 4);
+  r.setAttribute('fill', g.online ? '#17191c' : '#a3a6af');
   const t = document.createElementNS(ns, 'title');
   t.textContent = g.name;
   r.appendChild(t);

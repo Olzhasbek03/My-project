@@ -7,8 +7,13 @@ echo Установка зависимостей (один раз)...
 pip install -q -r requirements.txt
 
 if not exist app.db (
-  echo Загрузка фонда скважин (2420 скважин)...
-  python -m app.import_csv
+  if exist data\demo.db (
+    echo Копирование демо-базы (2420 скважин + радиоданные)...
+    copy /y data\demo.db app.db >nul
+  ) else (
+    echo Загрузка фонда скважин (2420 скважин)...
+    python -m app.import_csv
+  )
 )
 
 echo.

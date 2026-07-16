@@ -8,8 +8,13 @@ echo "Установка зависимостей (один раз)…"
 python3 -m pip install -q -r requirements.txt
 
 if [ ! -f app.db ]; then
-  echo "Загрузка фонда скважин (2420 скважин)…"
-  python3 -m app.import_csv
+  if [ -f data/demo.db ]; then
+    echo "Копирование демо-базы (2420 скважин + радиоданные)…"
+    cp data/demo.db app.db
+  else
+    echo "Загрузка фонда скважин (2420 скважин)…"
+    python3 -m app.import_csv
+  fi
 fi
 
 echo

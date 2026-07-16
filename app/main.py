@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .database import Base, engine
+from .bootstrap import ensure_data
 from .routers import admin, api, pages
 from .scheduler import scheduler_loop
 
@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    ensure_data()
     if config.IS_SERVERLESS:
         # на serverless нет фонового процесса — расписание отчётов должно
         # запускаться внешним cron (Vercel Cron → GET /api/cron/reports)

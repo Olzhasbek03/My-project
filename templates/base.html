@@ -26,5 +26,30 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+<script>
+// Числа КПЭ «набегают» при загрузке — редакционный счётчик
+(function () {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const ease = t => 1 - Math.pow(1 - t, 4);
+  document.querySelectorAll('.kpi .value, .hero .display').forEach(el => {
+    for (const node of el.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE) continue;
+      const m = node.textContent.match(/\d[\d\s]*/);
+      if (!m) continue;
+      const target = parseInt(m[0].replace(/\s/g, ''), 10);
+      if (!Number.isFinite(target) || target === 0) continue;
+      const tpl = node.textContent;
+      const t0 = performance.now(), dur = 1100;
+      (function tick(now) {
+        const p = Math.min((now - t0) / dur, 1);
+        node.textContent = tpl.replace(/\d[\d\s]*/,
+          Math.round(target * ease(p)).toString());
+        if (p < 1) requestAnimationFrame(tick);
+      })(t0);
+      break;
+    }
+  });
+})();
+</script>
 </body>
 </html>
