@@ -19,7 +19,7 @@ const minLon = Math.min(...lons), maxLon = Math.max(...lons);
 const pad = 40, W = 1220, H = 680;
 const x = lon => pad + (lon - minLon) / ((maxLon - minLon) || 1) * (W - 2 * pad);
 const y = lat => H - pad - (lat - minLat) / ((maxLat - minLat) || 1) * (H - 2 * pad);
-const colors = {in_operation: '#2e7d5c', stopped: '#a06423', offline: '#b0402a'};
+const colors = {in_operation: '#1e8a5e', stopped: '#d09a17', offline: '#9c2f1e'};
 const ns = 'http://www.w3.org/2000/svg';
 points.forEach((p, i) => {
   const a = document.createElementNS(ns, 'a');

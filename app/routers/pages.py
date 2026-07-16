@@ -72,6 +72,101 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
 # ---------- фонд скважин ----------
 
+def _row_status(r: dict) -> str:
+    """Статус скважины из уже собранной строки таблицы (без доп. запросов):
+    оффлайн → нет связи; остановлена → Stop или нулевой дебит; иначе в работе."""
+    if not r["online"]:
+        return "offline"
+    m = r["last"]
+    if r["well"].work_status == "Stop" or (m is not None and m.flow_rate <= 0):
+        return "stopped"
+    return "in_operation"
+
+
+def _gzu_dashboard(db: Session, rows: list[dict], gzu_id: int) -> dict:
+    """Аналитика по выбранному ГЗУ из строк текущей выборки.
+
+    Строится из тех же строк, что и таблица ниже, поэтому фильтры страницы
+    одинаково действуют на дашборды и на таблицу — цифры всегда сходятся.
+    """
+    gzu_obj = db.get(models.Gzu, gzu_id)
+    statuses = [_row_status(r) for r in rows]
+    q_total = sum(r["last"].flow_rate for r in rows
+                  if r["last"] and r["last"].flow_rate > 0)
+
+    top = sorted((r for r in rows if r["last"] and r["last"].flow_rate > 0),
+                 key=lambda r: -r["last"].flow_rate)[:10]
+
+    # Гистограмма распределения дебита по действующим скважинам
+    bins = [(0, 5), (5, 10), (10, 20), (20, 40), (40, 80), (80, None)]
+    bin_counts = [0] * len(bins)
+    for r in rows:
+        if r["last"] is None or r["last"].flow_rate <= 0:
+            continue
+        v = r["last"].flow_rate
+        for i, (lo, hi) in enumerate(bins):
+            if v >= lo and (hi is None or v < hi):
+                bin_counts[i] += 1
+                break
+
+    # Суммарный дебит ГЗУ по 4-часовым интервалам суток последнего замера
+    well_ids = [r["well"].id for r in rows]
+    fourh = []
+    last_times = [r["last"].measured_at for r in rows if r["last"]]
+    if last_times and well_ids:
+        ref = max(last_times)
+        start = ref.replace(hour=0, minute=0, second=0, microsecond=0)
+        sums = [dict() for _ in range(6)]           # bucket -> {well_id: [flows]}
+        ms = (db.query(models.Measurement.well_id,
+                       models.Measurement.measured_at,
+                       models.Measurement.flow_rate)
+              .filter(models.Measurement.well_id.in_(well_ids),
+                      models.Measurement.measured_at >= start,
+                      models.Measurement.measured_at < start + dt.timedelta(hours=24))
+              .all())
+        for wid, t, flow in ms:
+            b = int((t - start).total_seconds() // 14400)
+            if 0 <= b < 6 and flow > 0:
+                sums[b].setdefault(wid, []).append(flow)
+        for b in range(6):
+            total = sum(sum(v) / len(v) for v in sums[b].values())
+            t0 = start + dt.timedelta(hours=4 * b)
+            fourh.append({"label": f"{t0:%H:%M}", "value": round(total, 1)})
+
+    # Значительное снижение дебита внутри ГЗУ
+    drops = []
+    for r in rows:
+        m, prev = r["last"], r["q_4h"]
+        if m is None or not prev or prev <= 0 or r["well"].work_status == "Stop":
+            continue
+        pct = round((prev - m.flow_rate) / prev * 100, 1)
+        if pct >= config.RATE_DROP_THRESHOLD_PCT:
+            drops.append({"number": r["well"].number, "id": r["well"].id,
+                          "rate": round(m.flow_rate, 1), "drop": pct})
+    drops.sort(key=lambda d: -d["drop"])
+
+    return {
+        "name": gzu_obj.name if gzu_obj else "",
+        "cdn": gzu_obj.cdn.name if gzu_obj else "",
+        "kpi": {
+            "total": len(rows),
+            "online": statuses.count("in_operation") + statuses.count("stopped"),
+            "in_operation": statuses.count("in_operation"),
+            "stopped": statuses.count("stopped"),
+            "offline": statuses.count("offline"),
+            "q_total": round(q_total),
+            "shgn": sum(1 for r in rows if r["well"].well_type == "ШГН"),
+            "vn": sum(1 for r in rows if r["well"].well_type == "ВН"),
+        },
+        "top": [{"number": r["well"].number, "id": r["well"].id,
+                 "q": round(r["last"].flow_rate, 1)} for r in top],
+        "hist": [{"label": f"{lo}–{hi}" if hi else f"{lo}+", "value": n}
+                 for (lo, hi), n in zip(bins, bin_counts)],
+        "fourh": fourh,
+        "drops": drops[:5],
+    }
+
+
 SORT_COLUMNS = {
     "number": lambda r: r["well"].number,
     "gzu": lambda r: r["well"].gzu.name,
@@ -142,12 +237,34 @@ def wells_list(request: Request, q: str = "", sort: str = "number",
     from urllib.parse import urlencode
     filters_qs = urlencode({"q": q, "gzu": gzu, "cdn": cdn, "wtype": wtype,
                             "link": link, "wstatus": wstatus})
+    # без выбранного ГЗУ строка запроса для карточек-ссылок (gzu подставляется)
+    picker_qs = urlencode({"q": q, "cdn": cdn, "wtype": wtype,
+                           "link": link, "wstatus": wstatus})
+
+    # Аналитика: дашборды выбранного ГЗУ либо карточки выбора ГЗУ
+    dash = _gzu_dashboard(db, rows, gzu) if gzu else None
+    gzu_cards = []
+    if not gzu:
+        groups: dict[int, dict] = {}
+        for r in rows:
+            g = r["well"].gzu
+            card = groups.setdefault(g.id, {"id": g.id, "name": g.name,
+                                            "total": 0, "online": 0, "q": 0.0})
+            card["total"] += 1
+            card["online"] += 1 if r["online"] else 0
+            if r["last"] and r["last"].flow_rate > 0:
+                card["q"] += r["last"].flow_rate
+        gzu_cards = sorted(groups.values(), key=lambda c: c["name"])
+        for c in gzu_cards:
+            c["q"] = round(c["q"])
+
     return render(request, "wells.html", {
         "rows": rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE],
         "total": total, "online_count": online_count,
         "page": page, "pages": pages, "q": q, "sort": sort, "dir": dir,
         "gzu": gzu, "cdn": cdn, "wtype": wtype, "link": link, "wstatus": wstatus,
-        "filters_qs": filters_qs,
+        "filters_qs": filters_qs, "picker_qs": picker_qs,
+        "dash": dash, "gzu_cards": gzu_cards,
         "gzus": db.query(models.Gzu).order_by(models.Gzu.name).all(),
         "cdns": db.query(models.Cdn).order_by(models.Cdn.name).all(),
     })

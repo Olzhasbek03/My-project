@@ -41,6 +41,202 @@
   </form>
   <a class="btn" href="/wells/export.xlsx">⬇ {{ t('export_excel') }}</a>
 </div>
+
+{% if dash %}
+{# ---------- аналитика выбранного ГЗУ: фильтры выше действуют и на дашборды, и на таблицу ---------- #}
+<section class="dash">
+  <div class="page-head">
+    <h2 class="dash-title">{{ dash.name }} <span class="muted">· {{ dash.cdn }}</span></h2>
+    <a class="ghost-link" href="?{{ picker_qs }}">← Все ГЗУ</a>
+  </div>
+
+  <div class="kpi-grid dash-kpis">
+    <div class="kpi"><div class="value">{{ dash.kpi.total }}</div><div class="label">Скважин</div></div>
+    <div class="kpi ok"><div class="value">{{ dash.kpi.in_operation }}</div><div class="label">В работе</div></div>
+    <div class="kpi warn"><div class="value">{{ dash.kpi.stopped }}</div><div class="label">Остановлено</div></div>
+    <div class="kpi bad"><div class="value">{{ dash.kpi.offline }}</div><div class="label">Оффлайн</div></div>
+    <div class="kpi"><div class="value">{{ dash.kpi.shgn }}<span class="kpi-sep">/</span>{{ dash.kpi.vn }}</div><div class="label">ШГН / ВН</div></div>
+    <div class="kpi"><div class="value num">{{ dash.kpi.q_total }}</div><div class="label">Qж суммарный, т/сут</div></div>
+  </div>
+
+  <div class="dash-grid">
+    <div class="chart-card">
+      <h3>Состояние скважин</h3>
+      <div id="ch-status"></div>
+    </div>
+    <div class="chart-card">
+      <h3>Дебит по 4-часовым интервалам, т/сут</h3>
+      <div id="ch-fourh"></div>
+    </div>
+    <div class="chart-card">
+      <h3>Топ-10 скважин по дебиту, т/сут</h3>
+      <div id="ch-top"></div>
+    </div>
+    <div class="chart-card">
+      <h3>Распределение дебита, скважин в диапазоне т/сут</h3>
+      <div id="ch-hist"></div>
+    </div>
+  </div>
+
+  {% if dash.drops %}
+  <h2>Снижение дебита ≥ 30% за 4 ч <span class="muted">в этом ГЗУ</span></h2>
+  <table class="dash-drops">
+    <tr><th>Скважина</th><th>Qж (факт), т/сут</th><th>Снижение</th></tr>
+    {% for d in dash.drops %}
+    <tr>
+      <td><a href="/wells/{{ d.id }}">{{ d.number }}</a></td>
+      <td class="num">{{ d.rate }}</td>
+      <td class="bad-text num">−{{ d.drop }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
+
+<script>
+(function () {
+  const DASH = {{ dash | tojson }};
+  const css = getComputedStyle(document.documentElement);
+  const SIENNA = css.getPropertyValue('--sienna').trim() || '#5d2a1a';
+  const INK    = css.getPropertyValue('--ink').trim()    || '#17191c';
+  const ASH    = css.getPropertyValue('--ash').trim()    || '#979799';
+  const LINE   = css.getPropertyValue('--hairline').trim() || '#ececec';
+  const SURF   = css.getPropertyValue('--mist').trim()   || '#f2f2f3';
+  const STATUS = {
+    in_operation: css.getPropertyValue('--online').trim(),
+    stopped:      css.getPropertyValue('--stopped').trim(),
+    offline:      css.getPropertyValue('--offline').trim(),
+  };
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (n, at) => { const e = document.createElementNS(NS, n);
+    for (const k in at) e.setAttribute(k, at[k]); return e; };
+  const txt = (x, y, s, size, fill, anchor, weight) => {
+    const t = el('text', { x, y, 'text-anchor': anchor || 'start',
+      'font-size': size, fill, 'font-weight': weight || 400,
+      'font-family': 'inherit' });
+    t.textContent = s; return t; };
+
+  // единая всплывающая подсказка (textContent — без HTML-вставок)
+  const tip = document.createElement('div');
+  tip.className = 'chart-tip'; tip.hidden = true; document.body.appendChild(tip);
+  const tipVal = document.createElement('b');
+  const tipLbl = document.createElement('span');
+  tip.append(tipVal, document.createElement('br'), tipLbl);
+  function bindTip(node, label, value) {
+    node.addEventListener('pointermove', e => {
+      tipVal.textContent = value; tipLbl.textContent = label;
+      tip.hidden = false;
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - 180) + 'px';
+      tip.style.top = (e.clientY - 12) + 'px';
+    });
+    node.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  // --- состояние скважин: 100% состав + легенда со значениями ---
+  (function status() {
+    const box = document.getElementById('ch-status');
+    const order = [['in_operation', 'В работе'], ['stopped', 'Остановлена'], ['offline', 'Оффлайн']];
+    const total = order.reduce((s, [k]) => s + DASH.kpi[k], 0) || 1;
+    const W = 520, H = 20, R = 4, GAP = 2;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', height: 22,
+      preserveAspectRatio: 'none' });
+    let x = 0;
+    order.forEach(([k, name], i) => {
+      const w = DASH.kpi[k] / total * W;
+      if (w <= 0) return;
+      const seg = el('rect', { x: x + (i ? GAP : 0), y: 0,
+        width: Math.max(w - (i ? GAP : 0), 1), height: H,
+        rx: R, fill: STATUS[k] });
+      bindTip(seg, name, DASH.kpi[k] + ' скв · ' + Math.round(DASH.kpi[k] / total * 100) + '%');
+      svg.appendChild(seg); x += w;
+    });
+    box.appendChild(svg);
+    const lg = document.createElement('div'); lg.className = 'chart-legend';
+    order.forEach(([k, name]) => {
+      const item = document.createElement('span'); item.className = 'lg-item';
+      const dot = document.createElement('i'); dot.style.background = STATUS[k];
+      const lbl = document.createElement('span');
+      lbl.textContent = name + ' — ' + DASH.kpi[k];
+      item.append(dot, lbl); lg.appendChild(item);
+    });
+    box.appendChild(lg);
+  })();
+
+  // --- горизонтальные бары: топ-10 по дебиту (одна серия — один цвет) ---
+  (function top() {
+    const box = document.getElementById('ch-top');
+    if (!DASH.top.length) { box.className = 'chart-empty'; box.textContent = '—'; return; }
+    const max = DASH.top[0].q, LBL = 64, VAL = 52, BH = 14, STEP = 30;
+    const W = 520, H = DASH.top.length * STEP;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%' });
+    svg.style.maxHeight = H + 'px';
+    DASH.top.forEach((d, i) => {
+      const y = i * STEP + (STEP - BH) / 2;
+      const w = Math.max(d.q / max * (W - LBL - VAL), 3);
+      const a = el('a', { href: '/wells/' + d.id });
+      a.appendChild(txt(LBL - 10, y + BH - 3, d.number, 13, INK, 'end', 450));
+      const band = el('rect', { x: 0, y: i * STEP, width: W, height: STEP, fill: 'transparent' });
+      const bar = el('path', { d:
+        `M${LBL},${y} h${w - 4} a4,4 0 0 1 4,4 v${BH - 8} a4,4 0 0 1 -4,4 h-${w - 4} z`,
+        fill: SIENNA });
+      svg.append(band, a, bar,
+        txt(LBL + w + 8, y + BH - 3, d.q, 13, INK, 'start', 480));
+      [band, bar].forEach(n => bindTip(n, 'Скважина ' + d.number, d.q + ' т/сут'));
+    });
+    box.appendChild(svg);
+  })();
+
+  // --- колонки: 4-часовые интервалы и гистограмма распределения ---
+  function columns(id, items, unit) {
+    const box = document.getElementById(id);
+    if (!items.length || !items.some(d => d.value > 0)) {
+      box.className = 'chart-empty'; box.textContent = 'Нет данных за сутки'; return;
+    }
+    const W = 520, PH = 128, AX = 22, H = PH + AX;
+    const max = Math.max(...items.map(d => d.value));
+    const slot = W / items.length, BW = Math.min(24, slot * 0.5);
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%' });
+    svg.appendChild(el('line', { x1: 0, y1: PH, x2: W, y2: PH,
+      stroke: LINE, 'stroke-width': 1 }));
+    items.forEach((d, i) => {
+      const cx = i * slot + slot / 2;
+      const h = d.value > 0 ? Math.max(d.value / max * (PH - 26), 3) : 0;
+      const band = el('rect', { x: i * slot, y: 0, width: slot, height: H,
+        fill: 'transparent' });
+      svg.appendChild(band);
+      if (h > 0) {
+        const bar = el('path', { d:
+          `M${cx - BW / 2},${PH} v-${h - 4} a4,4 0 0 1 4,-4 h${BW - 8} a4,4 0 0 1 4,4 v${h - 4} z`,
+          fill: SIENNA });
+        svg.appendChild(bar);
+        svg.appendChild(txt(cx, PH - h - 7, d.value, 12.5, INK, 'middle', 480));
+        bindTip(bar, d.label, d.value + ' ' + unit);
+      }
+      bindTip(band, d.label, d.value + ' ' + unit);
+      svg.appendChild(txt(cx, PH + 16, d.label, 12, ASH, 'middle'));
+    });
+    box.appendChild(svg);
+  }
+  columns('ch-fourh', DASH.fourh, 'т/сут');
+  columns('ch-hist', DASH.hist, 'скв');
+})();
+</script>
+
+{% elif gzu_cards %}
+{# ---------- выбор ГЗУ: карточки с мини-сводкой ---------- #}
+<p class="eyebrow">Аналитика по ГЗУ</p>
+<p class="muted dash-hint">Выберите ГЗУ — по нему откроются дашборды: состояние, дебит, топ скважин и снижение дебита.</p>
+<div class="gzu-grid">
+  {% for c in gzu_cards %}
+  <a class="gzu-card" href="?{{ picker_qs }}&gzu={{ c.id }}">
+    <span class="gzu-name">{{ c.name }}</span>
+    <span class="gzu-meta">{{ c.total }} скв · онлайн {{ c.online }}</span>
+    <span class="gzu-q num">{{ c.q }} <small>т/сут</small></span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <table>
   <tr>
     <th>{{ sort_link('number', t('well_name')) }}</th>

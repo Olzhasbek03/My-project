@@ -27,10 +27,12 @@
   --sienna: #5d2a1a;
   --hairline: #ececec;
 
-  /* функциональные статусы — приглушённые, редакционные */
-  --online: #2e7d5c;
-  --stopped: #a06423;
-  --offline: #b0402a;
+  /* функциональные статусы — приглушённые, редакционные.
+     Тройка проверена валидатором палитр (CVD ΔE ≥ 9, норм. зрение ≥ 19,
+     контраст к белому ≥ 3:1) — различима при дальтонизме и на карте. */
+  --online: #1e8a5e;
+  --stopped: #d09a17;
+  --offline: #9c2f1e;
 
   /* type */
   --serif: "Signifier", "Source Serif 4", Georgia, "Times New Roman", ui-serif, serif;
@@ -88,8 +90,8 @@ main {
   to   { transform: scaleY(1); }
 }
 @keyframes breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(46, 125, 92, 0.35); }
-  60%      { box-shadow: 0 0 0 7px rgba(46, 125, 92, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(30, 138, 94, 0.35); }
+  60%      { box-shadow: 0 0 0 7px rgba(30, 138, 94, 0); }
 }
 
 main > * { animation: fade-up 0.7s var(--ease-out) both; }
@@ -326,9 +328,9 @@ tr:hover td { background: var(--fog); }
   padding: 6px 14px;
   border-radius: var(--radius-pill);
 }
-.status.in_operation { color: var(--online); background: rgba(46, 125, 92, 0.08); }
-.status.stopped { color: var(--stopped); background: rgba(160, 100, 35, 0.09); }
-.status.offline { color: var(--offline); background: rgba(176, 64, 42, 0.08); }
+.status.in_operation { color: var(--online); background: rgba(30, 138, 94, 0.08); }
+.status.stopped { color: #8a660d; background: rgba(208, 154, 23, 0.12); }
+.status.offline { color: var(--offline); background: rgba(156, 47, 30, 0.08); }
 
 /* ---------- контролы: пилюли ---------- */
 
@@ -577,6 +579,88 @@ details[open] summary { color: var(--sienna); }
   letter-spacing: -0.35px;
 }
 .report-item p { color: var(--ash); margin: 0 0 20px; font-size: 14px; letter-spacing: 0.3px; }
+
+/* ---------- аналитика ГЗУ: дашборды на странице фонда ---------- */
+
+.dash { margin: 8px 0 48px; }
+.dash-title { margin: 24px 0 8px; }
+.dash-kpis { margin: 20px 0 36px; }
+.kpi-sep { color: var(--smoke); margin: 0 6px; font-size: 0.7em; }
+.ghost-link {
+  color: var(--slate); text-decoration: none; font-size: 15px;
+  padding: 8px 16px; border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.ghost-link:hover { background: var(--mist); color: var(--ink); }
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 24px;
+  margin: 8px 0 24px;
+}
+.chart-card {
+  background: var(--mist);
+  border-radius: var(--radius-card);
+  padding: 24px 28px 20px;
+}
+.chart-card h3 {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--ash);
+  margin: 0 0 18px;
+}
+.chart-card svg { display: block; overflow: visible; }
+.chart-card svg text { font-family: var(--sans); }
+.chart-card svg a { cursor: pointer; }
+.chart-card svg path:hover, .chart-card svg rect[fill]:not([fill="transparent"]):hover { opacity: 0.85; }
+.chart-empty { color: var(--smoke); font-size: 15px; padding: 24px 0; }
+
+.chart-legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 14px; }
+.lg-item { display: inline-flex; align-items: center; gap: 8px;
+           font-size: 14px; color: var(--slate); }
+.lg-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.chart-tip {
+  position: fixed; z-index: 50; pointer-events: none;
+  background: var(--paper); color: var(--ink);
+  border-radius: 12px; padding: 10px 14px; font-size: 13px; line-height: 1.45;
+  box-shadow: var(--shadow-artifact); max-width: 220px;
+}
+.chart-tip b { font-size: 15px; font-weight: 480; }
+.chart-tip span { color: var(--slate); }
+
+.dash-drops { max-width: 640px; }
+.dash-hint { margin: 4px 0 20px; }
+
+/* выбор ГЗУ — карточки с мини-сводкой */
+.gzu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 0 0 40px;
+}
+.gzu-card {
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--mist);
+  border-radius: var(--radius-input);
+  padding: 16px 18px;
+  text-decoration: none;
+  transition: transform 0.35s var(--ease-out), background 0.25s ease,
+              box-shadow 0.35s var(--ease-out);
+}
+.gzu-card:hover { transform: translateY(-3px); background: var(--fog);
+                  box-shadow: var(--shadow-soft); }
+.gzu-name { font-size: 16px; font-weight: 480; color: var(--ink); }
+.gzu-meta { font-size: 13px; color: var(--ash); }
+.gzu-q { font-family: var(--serif); font-style: italic; font-size: 24px;
+         color: var(--sienna); margin-top: 6px; }
+.gzu-q small { font-family: var(--sans); font-style: normal; font-size: 12px;
+               color: var(--ash); }
 
 /* ---------- деликатность к движению ---------- */
 
