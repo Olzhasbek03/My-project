@@ -223,18 +223,130 @@
 </script>
 
 {% elif gzu_cards %}
-{# ---------- выбор ГЗУ: карточки с мини-сводкой ---------- #}
-<p class="eyebrow">Аналитика по ГЗУ</p>
-<p class="muted dash-hint">Выберите ГЗУ — по нему откроются дашборды: состояние, дебит, топ скважин и снижение дебита.</p>
-<div class="gzu-grid">
-  {% for c in gzu_cards %}
-  <a class="gzu-card" href="?{{ picker_qs }}&gzu={{ c.id }}">
-    <span class="gzu-name">{{ c.name }}</span>
-    <span class="gzu-meta">{{ c.total }} скв · онлайн {{ c.online }}</span>
-    <span class="gzu-q num">{{ c.q }} <small>т/сут</small></span>
-  </a>
-  {% endfor %}
-</div>
+{# ---------- выбор ГЗУ: круговая диаграмма долей дебита ---------- #}
+<section class="pie-section">
+  <p class="eyebrow">Аналитика по ГЗУ</p>
+  <p class="muted dash-hint">Доля каждого ГЗУ в суммарном дебите. Нажмите на сектор — откроются дашборды этого ГЗУ.</p>
+  <div class="pie-wrap">
+    <div class="pie-chart" id="gzu-pie"></div>
+    <div class="pie-list" id="gzu-list"></div>
+  </div>
+</section>
+
+<script>
+(function () {
+  const CARDS = {{ gzu_cards | tojson }};
+  const QS = {{ picker_qs | tojson }};
+  const data = CARDS.filter(c => c.q > 0).sort((a, b) => b.q - a.q);
+  const zeroes = CARDS.filter(c => c.q <= 0).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const total = data.reduce((s, c) => s + c.q, 0);
+  if (!total) return;
+
+  // тёплая редакционная последовательность; смежность различима за счёт
+  // порядка цикла и белых 2px зазоров, идентичность несут список и подсказка
+  const SHADES = ['#5d2a1a', '#c97e54', '#8c8781', '#e8b48c', '#6f4a38', '#b9b2aa'];
+  const color = i => {
+    if (i === data.length - 1 && data.length % SHADES.length === 1) return SHADES[1];
+    return SHADES[i % SHADES.length];
+  };
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const CX = 230, CY = 230, R1 = 218, R0 = 132;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 460 460');
+  svg.style.width = '100%';
+
+  const tip = document.createElement('div');
+  tip.className = 'chart-tip'; tip.hidden = true; document.body.appendChild(tip);
+  const tv = document.createElement('b'), tl = document.createElement('span');
+  tip.append(tv, document.createElement('br'), tl);
+
+  function arc(a0, a1, r0, r1) {
+    const p = (a, r) => [CX + r * Math.sin(a), CY - r * Math.cos(a)];
+    const [x0, y0] = p(a0, r1), [x1, y1] = p(a1, r1);
+    const [x2, y2] = p(a1, r0), [x3, y3] = p(a0, r0);
+    const big = (a1 - a0) > Math.PI ? 1 : 0;
+    return `M${x0},${y0} A${r1},${r1} 0 ${big} 1 ${x1},${y1} ` +
+           `L${x2},${y2} A${r0},${r0} 0 ${big} 0 ${x3},${y3} Z`;
+  }
+
+  const rows = [];
+  let angle = 0;
+  data.forEach((c, i) => {
+    const frac = c.q / total;
+    const sweep = frac * Math.PI * 2;
+    const pad = Math.min(2 / R1, sweep * 0.15);   // белый зазор-разделитель
+    const a0 = angle + pad / 2, a1 = angle + sweep - pad / 2;
+    angle += sweep;
+
+    const link = document.createElementNS(NS, 'a');
+    link.setAttribute('href', '?' + QS + '&gzu=' + c.id);
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', arc(a0, Math.max(a1, a0 + 0.004), R0, R1));
+    path.setAttribute('fill', color(i));
+    path.classList.add('pie-slice');
+    const mid = (a0 + a1) / 2;
+    path.style.setProperty('--dx', (Math.sin(mid) * 6) + 'px');
+    path.style.setProperty('--dy', (-Math.cos(mid) * 6) + 'px');
+    link.appendChild(path);
+    svg.appendChild(link);
+
+    const share = (frac * 100).toFixed(frac >= 0.1 ? 0 : 1);
+    path.addEventListener('pointermove', e => {
+      tv.textContent = c.q + ' т/сут · ' + share + '%';
+      tl.textContent = c.name + ' — ' + c.total + ' скв, онлайн ' + c.online;
+      tip.hidden = false;
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - 220) + 'px';
+      tip.style.top = (e.clientY - 12) + 'px';
+    });
+    path.addEventListener('pointerleave', () => { tip.hidden = true; rows[i]?.classList.remove('hot'); });
+    path.addEventListener('pointerenter', () => rows[i]?.classList.add('hot'));
+  });
+
+  // центр: суммарный дебит
+  const t1 = document.createElementNS(NS, 'text');
+  t1.setAttribute('x', CX); t1.setAttribute('y', CY - 4);
+  t1.setAttribute('text-anchor', 'middle'); t1.setAttribute('class', 'pie-total');
+  t1.textContent = total.toLocaleString('ru-RU');
+  const t2 = document.createElementNS(NS, 'text');
+  t2.setAttribute('x', CX); t2.setAttribute('y', CY + 26);
+  t2.setAttribute('text-anchor', 'middle'); t2.setAttribute('class', 'pie-sub');
+  t2.textContent = 'т/сут · ' + data.length + ' ГЗУ';
+  svg.append(t1, t2);
+  document.getElementById('gzu-pie').appendChild(svg);
+
+  // легенда-список: и подпись, и указатель — кликабельна так же, как сектор
+  const list = document.getElementById('gzu-list');
+  data.forEach((c, i) => {
+    const a = document.createElement('a');
+    a.className = 'pie-row';
+    a.href = '?' + QS + '&gzu=' + c.id;
+    const key = document.createElement('i'); key.style.background = color(i);
+    const name = document.createElement('span'); name.className = 'pr-name';
+    name.textContent = c.name;
+    const val = document.createElement('span'); val.className = 'pr-val num';
+    val.textContent = c.q.toLocaleString('ru-RU');
+    const share = document.createElement('span'); share.className = 'pr-share num';
+    share.textContent = (c.q / total * 100).toFixed(c.q / total >= 0.1 ? 0 : 1) + '%';
+    a.append(key, name, val, share);
+    a.addEventListener('pointerenter', () => svg.querySelectorAll('.pie-slice')[i]?.classList.add('hot'));
+    a.addEventListener('pointerleave', () => svg.querySelectorAll('.pie-slice')[i]?.classList.remove('hot'));
+    list.appendChild(a); rows.push(a);
+  });
+  zeroes.forEach(c => {
+    const a = document.createElement('a');
+    a.className = 'pie-row zero';
+    a.href = '?' + QS + '&gzu=' + c.id;
+    const key = document.createElement('i');
+    const name = document.createElement('span'); name.className = 'pr-name';
+    name.textContent = c.name;
+    const val = document.createElement('span'); val.className = 'pr-val';
+    val.textContent = 'нет дебита';
+    a.append(key, name, val, document.createElement('span'));
+    list.appendChild(a);
+  });
+})();
+</script>
 {% endif %}
 
 <table>
