@@ -5,6 +5,7 @@
 import asyncio
 import contextlib
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -31,7 +32,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Well Monitor", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# абсолютный путь: на Vercel рабочая директория функции не гарантирована
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app.mount("/static", StaticFiles(directory=os.path.join(_ROOT, "static")), name="static")
 app.include_router(pages.router)
 app.include_router(admin.router)
 app.include_router(api.router)

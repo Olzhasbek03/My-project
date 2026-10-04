@@ -1,11 +1,14 @@
 """Рендеринг шаблонов с учётом языка пользователя (cookie site_lang)."""
+import os
+
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from . import config
 from .i18n import RADIO_LANGS, t
 
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates"))
 
 
 def render(request: Request, name: str, context: dict, status_code: int = 200,
