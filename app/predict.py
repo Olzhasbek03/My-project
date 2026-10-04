@@ -5,33 +5,58 @@
   • ГЗУ → изменение по каждой скважине группы;
   • скважина → ряд замеров, линейный тренд и прогноз на следующее окно.
 
-Сравнение честное по данным: «сейчас» — последний замер, «было» — последний
-замер не позднее (сейчас − окно). Скважины без пары замеров помечаются
-«нет данных», а не нулём.
+Сравнение честное по данным: «сейчас» — последний замер, «было» — замер,
+ближайший к (сейчас − окно) в пределах допуска PAIR_TOLERANCE. Скважины без
+такой пары или без свежего замера помечаются «нет данных», а не нулём.
+
+Время отсчитывается от самого свежего замера по фонду (как и статус связи в
+services.link_anchor), а не от часов сервера — иначе статичная витрина
+со временем «протухает».
 """
 from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import models
 
-# насколько глубоко смотрим назад за парным замером (макс. окно × запас)
+# насколько глубоко смотрим назад: 2 × макс. окно (для тренда 24 ч) + запас
 LOOKBACK_HOURS = 72
+# «было» должно отстоять от «сейчас» на окно ± эта доля окна
+PAIR_TOLERANCE = 0.25
+# по скольким окнам назад строится тренд для прогноза (24 ч × 3 = LOOKBACK)
+FIT_WINDOWS = 3
+# критические значения t-Стьюдента (95%, двусторонний) по числу степеней
+# свободы n−2: тренд значим, если |наклон| > t × его ст. ошибка
+_T95 = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36,
+        8: 2.31, 9: 2.26, 10: 2.23}
 
 
-def _measurements_by_well(db: Session, well_ids: list[int]) -> dict[int, list]:
-    """Все замеры скважин за LOOKBACK_HOURS, по скважине, свежие первыми."""
+def _t95(dof: int) -> float:
+    return _T95.get(dof, 2.0)
+
+
+def data_anchor(db: Session) -> dt.datetime:
+    """Опорное «сейчас» — самый свежий замер по фонду."""
+    latest = db.query(func.max(models.Measurement.measured_at)).scalar()
+    return latest or dt.datetime.utcnow()
+
+
+def _measurements_by_well(db: Session, well_ids: list[int],
+                          anchor: dt.datetime) -> dict[int, list]:
+    """Валидные замеры скважин за LOOKBACK_HOURS до anchor, свежие первыми."""
     if not well_ids:
         return {}
-    since = dt.datetime.utcnow() - dt.timedelta(hours=LOOKBACK_HOURS)
+    since = anchor - dt.timedelta(hours=LOOKBACK_HOURS)
     rows = (db.query(models.Measurement.well_id,
                      models.Measurement.measured_at,
                      models.Measurement.flow_rate)
             .filter(models.Measurement.well_id.in_(well_ids),
-                    models.Measurement.measured_at >= since)
+                    models.Measurement.measured_at >= since,
+                    models.Measurement.is_valid.isnot(False))
             .order_by(models.Measurement.measured_at.desc())
             .all())
     out: dict[int, list] = defaultdict(list)
@@ -40,16 +65,26 @@ def _measurements_by_well(db: Session, well_ids: list[int]) -> dict[int, list]:
     return out
 
 
-def _pair(series: list, window_h: int):
-    """(q_now, q_prev) по ряду замеров: последний и последний до t-окно."""
+def _pair(series: list, window_h: int, anchor: dt.datetime):
+    """(q_now, q_prev, stale) по ряду замеров (свежие первыми).
+
+    q_now — последний замер; stale=True, если он старше anchor − окно (тогда
+    «сейчас» неизвестно и изменение не считается). q_prev — замер, ближайший к
+    (t_now − окно), но не дальше допуска; иначе None.
+    """
     if not series:
-        return None, None
+        return None, None, False
     t1, q1 = series[0]
-    cutoff = t1 - dt.timedelta(hours=window_h)
+    win = dt.timedelta(hours=window_h)
+    if t1 < anchor - win:
+        return q1, None, True
+    target, tol = t1 - win, win * PAIR_TOLERANCE
+    best = None
     for t, q in series[1:]:
-        if t <= cutoff:
-            return q1, q
-    return q1, None
+        gap = abs(t - target)
+        if gap <= tol and (best is None or gap < best[0]):
+            best = (gap, q)
+    return q1, (best[1] if best else None), False
 
 
 def well_changes(db: Session, wells: list[models.Well],
@@ -57,10 +92,11 @@ def well_changes(db: Session, wells: list[models.Well],
     """Изменение дебита каждой скважины за окно + статус связи."""
     from . import services
     anchor = services.link_anchor(db)
-    series = _measurements_by_well(db, [w.id for w in wells])
+    t_anchor = data_anchor(db)
+    series = _measurements_by_well(db, [w.id for w in wells], t_anchor)
     rows = []
     for w in wells:
-        q_now, q_prev = _pair(series.get(w.id, []), window_h)
+        q_now, q_prev, stale = _pair(series.get(w.id, []), window_h, t_anchor)
         delta = pct = None
         if q_now is not None and q_prev is not None:
             delta = round(q_now - q_prev, 1)
@@ -72,7 +108,7 @@ def well_changes(db: Session, wells: list[models.Well],
             "online": services.link_online(w, anchor),
             "q_now": round(q_now, 1) if q_now is not None else None,
             "q_prev": round(q_prev, 1) if q_prev is not None else None,
-            "delta": delta, "pct": pct,
+            "delta": delta, "pct": pct, "stale": stale,
         })
     return rows
 
@@ -118,34 +154,57 @@ def gzu_changes(db: Session, window_h: int) -> list[dict]:
         g["q_prev"] = round(g["q_prev"], 1)
         out.append(g)
     # худшие сверху: сначала падение, затем без данных, затем рост
-    out.sort(key=lambda g: g["delta"] if g["delta"] is not None else 0)
+    out.sort(key=lambda g: (0, g["delta"]) if g["delta"] is not None and g["delta"] < 0
+             else (1, 0) if g["delta"] is None else (2, g["delta"]))
     return out
 
 
 def well_forecast(db: Session, well: models.Well, window_h: int) -> dict:
-    """Ряд замеров скважины + линейный тренд и прогноз на следующее окно."""
-    series = list(reversed(_measurements_by_well(db, [well.id]).get(well.id, [])))
+    """Ряд замеров скважины + линейный тренд и прогноз на следующее окно.
+
+    Тренд — МНК по замерам за последние FIT_WINDOWS окон (не меньше 3 точек).
+    Прогноз берётся с линии тренда, а не от последней точки, чтобы шум одного
+    замера не переносился вперёд. Если наклон статистически не отличим от
+    нуля (|b| ≤ t₀.₉₅·SE), тренд помечается незначимым и прогноз
+    равен текущему уровню линии.
+    """
+    t_anchor = data_anchor(db)
+    series = list(reversed(
+        _measurements_by_well(db, [well.id], t_anchor).get(well.id, [])))
     points = [{"t": t.strftime("%d.%m %H:%M"), "ts": t.isoformat(), "q": round(q, 2)}
               for t, q in series]
 
-    slope_per_h = None
-    projected = None
-    if len(series) >= 2:
-        # линейная регрессия q(t) по часам от первого замера
-        t0 = series[0][0]
-        xs = [(t - t0).total_seconds() / 3600 for t, _ in series]
-        ys = [q for _, q in series]
-        n = len(xs)
-        mx, my = sum(xs) / n, sum(ys) / n
-        den = sum((x - mx) ** 2 for x in xs)
-        if den > 0:
-            slope_per_h = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den
-            last_x, last_q = xs[-1], ys[-1]
-            projected = max(0.0, last_q + slope_per_h * window_h)
+    out = {"points": points, "fit_points": 0, "slope_per_h": None,
+           "level": None, "projected": None, "significant": False,
+           "window_h": window_h}
+    if not series:
+        return out
+    t_last = series[-1][0]
+    fit = [(t, q) for t, q in series
+           if t >= t_last - dt.timedelta(hours=window_h * FIT_WINDOWS)]
+    out["fit_points"] = len(fit)
+    if len(fit) < 3:
+        return out
 
-    return {
-        "points": points,
-        "slope_per_h": round(slope_per_h, 3) if slope_per_h is not None else None,
-        "projected": round(projected, 1) if projected is not None else None,
-        "window_h": window_h,
-    }
+    xs = [(t - t_last).total_seconds() / 3600 for t, _ in fit]  # ≤ 0
+    ys = [q for _, q in fit]
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx <= 0:
+        return out
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    a = my - b * mx                      # уровень линии в момент t_last
+    resid = sum((y - (a + b * x)) ** 2 for x, y in zip(xs, ys))
+    se = (resid / (n - 2) / sxx) ** 0.5
+    significant = b != 0 and abs(b) > _t95(n - 2) * se
+    level = max(0.0, a)
+    projected = max(0.0, a + b * window_h) if significant else level
+
+    out.update({
+        "slope_per_h": round(b, 3),
+        "level": round(level, 1),
+        "projected": round(projected, 1),
+        "significant": significant,
+    })
+    return out

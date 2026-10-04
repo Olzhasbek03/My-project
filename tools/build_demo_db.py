@@ -7,8 +7,15 @@
 БД просто копируется в /tmp за миллисекунды — холодный старт мгновенный,
 вместо ~5 c импорта CSV на каждом инстансе.
 
+CSV даёт по скважине только два замера (сейчас и 4 ч назад), поэтому для
+вкладки «Прогнозы» (окно 24 ч, тренд) ряд дополняется СИНТЕТИЧЕСКОЙ историей:
+замеры каждые 4 ч на 48 ч назад вокруг замера «4 ч назад». Два реальных
+последних замера не меняются, так что списки и карточки скважин те же;
+скважины без замера «4 ч назад» историю не получают.
+
 Запуск:  python -m tools.build_demo_db
 """
+import datetime as dt
 import os
 import random
 
@@ -36,6 +43,7 @@ def build() -> None:
         return
 
     rnd = random.Random(42)  # детерминированно
+    _add_history(db, random.Random(7))  # отдельный генератор: радио-данные прежние
     gateways = db.query(models.Gateway).all()
     devices = db.query(models.Device).filter(
         models.Device.well_id.isnot(None)).all()
@@ -71,6 +79,44 @@ def build() -> None:
           f"измерений: {db.query(models.Measurement).count()}, "
           f"БС: {db.query(models.Gateway).count()}")
     db.close()
+
+
+HISTORY_HOURS = 48
+HISTORY_STEP_H = 4
+
+
+def _add_history(db, rnd: random.Random) -> None:
+    """Синтетическая история дебита: 48 ч до замера «4 ч назад».
+
+    Профили: ~80% стабильные (шум ±6%), ~12% с плавным спадом (уровень
+    48 ч назад выше на 20–60%), ~8% с ростом. Остановленные/нулевые — нули.
+    """
+    from collections import defaultdict
+    by_well = defaultdict(list)
+    for m in (db.query(models.Measurement)
+              .order_by(models.Measurement.measured_at.desc())):
+        by_well[m.well_id].append(m)
+    added = []
+    for wid, ms in by_well.items():
+        if len(ms) < 2:
+            continue  # нет «Qж за 4 часа» в CSV — не выдумываем его
+        base = ms[1]
+        q0 = base.flow_rate or 0.0
+        r = rnd.random()
+        k = (rnd.uniform(0.2, 0.6) if r < 0.12
+             else -rnd.uniform(0.15, 0.4) if r < 0.20 else 0.0)
+        for h in range(HISTORY_STEP_H, HISTORY_HOURS + 1, HISTORY_STEP_H):
+            t = base.measured_at - dt.timedelta(hours=h)
+            q = 0.0 if q0 <= 0 else max(
+                0.0, q0 * (1 + k * h / HISTORY_HOURS) * (1 + rnd.uniform(-0.06, 0.06)))
+            added.append(models.Measurement(
+                well_id=wid, measured_at=t, received_at=t,
+                flow_rate=round(q, 3), cumulative_total=0.0,
+                pressure=base.pressure, temperature=base.temperature,
+                alarm=base.alarm))
+    db.add_all(added)
+    db.commit()
+    print(f"синтетических замеров истории: {len(added)}")
 
 
 if __name__ == "__main__":
