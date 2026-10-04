@@ -107,13 +107,21 @@
     <h3>Дебит, т/сут</h3>
     <p class="big num">{{ row.q_now if row.q_now is not none else '—' }}</p>
     <p>Было ({{ window }} ч назад): {{ row.q_prev if row.q_prev is not none else '—' }}</p>
+    {% if row.stale %}<p class="muted">Последний замер старше {{ window }} ч — изменение не считается</p>{% endif %}
     <p>Изменение: {{ delta_cell(row) }} {{ '(' ~ row.pct ~ '%)' if row.pct is not none else '' }}</p>
   </div>
   <div class="card">
     <h3>Прогноз через {{ window }} ч</h3>
     <p class="big num">{{ forecast.projected if forecast.projected is not none else '—' }}</p>
-    <p>Тренд: {{ '%+.2f'|format(forecast.slope_per_h) ~ ' т/сут·ч' if forecast.slope_per_h is not none else 'недостаточно замеров' }}</p>
-    <p>Линейная экстраполяция последних замеров</p>
+    {% if forecast.slope_per_h is none %}
+    <p>Недостаточно замеров для тренда (нужно ≥ 3 за {{ window * 3 }} ч, есть {{ forecast.fit_points }})</p>
+    {% elif forecast.significant %}
+    <p>Тренд: {{ '%+.2f'|format(forecast.slope_per_h) }} т/сут·ч</p>
+    <p>Линейный тренд по {{ forecast.fit_points }} замерам за {{ window * 3 }} ч</p>
+    {% else %}
+    <p>Значимого тренда нет ({{ '%+.2f'|format(forecast.slope_per_h) }} т/сут·ч в пределах шума)</p>
+    <p>Прогноз — текущий уровень по {{ forecast.fit_points }} замерам</p>
+    {% endif %}
   </div>
   <div class="card">
     <h3>Связь</h3>
@@ -136,7 +144,7 @@
   const ASH = css.getPropertyValue('--ash').trim();
   const LINE = css.getPropertyValue('--hairline').trim();
   const box = document.getElementById('ch-series');
-  const pts = F.points.slice(-10);
+  const pts = F.points.slice(-12);
   if (!pts.length) { box.className = 'chart-empty'; box.textContent = 'Нет замеров за 72 ч'; return; }
   const items = pts.map(p => ({label: p.t, value: p.q, proj: false}));
   if (F.projected !== null) items.push({label: '+' + F.window_h + 'ч (прогноз)', value: F.projected, proj: true});

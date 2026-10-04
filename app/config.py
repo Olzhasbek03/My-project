@@ -44,4 +44,4 @@ DEFAULT_LANGUAGE = "ru"
 # рекомендации дополнительно формулирует Claude (нужен выход в интернет).
 AI_API_KEY = os.environ.get("WELLAPP_AI_API_KEY",
                             os.environ.get("ANTHROPIC_API_KEY", ""))
-AI_MODEL = os.environ.get("WELLAPP_AI_MODEL", "claude-opus-4-8")
+AI_MODEL = os.environ.get("WELLAPP_AI_MODEL", "claude-opus-5-5")

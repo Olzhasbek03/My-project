@@ -41,15 +41,26 @@ def _sorted(recs: list[dict]) -> list[dict]:
 def advise_fleet(gzu_rows: list[dict], window_h: int) -> list[dict]:
     """Рекомендации уровня месторождения по изменениям ГЗУ."""
     recs: list[dict] = []
-    falling = [g for g in gzu_rows if g["delta"] is not None and g["delta"] < 0]
+    paired = [g for g in gzu_rows if g["delta"] is not None]
+    falling = sorted((g for g in paired if g["delta"] < 0), key=lambda g: g["delta"])
+    rising = [g for g in paired if g["delta"] > 0]
     total_loss = round(sum(-g["delta"] for g in falling), 1)
+    total_gain = round(sum(g["delta"] for g in rising), 1)
+    net = round(total_gain - total_loss, 1)
     if falling:
         worst = falling[:3]
+        if net < 0:
+            title = f"Добыча по фонду снизилась на {-net} т/сут за {window_h} ч"
+        else:
+            title = (f"Падение в {len(falling)} ГЗУ: −{total_loss} т/сут "
+                     f"за {window_h} ч (по фонду итог {net:+} т/сут)")
         recs.append({
-            "severity": "critical" if total_loss > 100 else "warn",
-            "title": f"Потеря добычи {total_loss} т/сут за {window_h} ч",
-            "detail": "Наибольший вклад: " + ", ".join(
-                f"{g['name']} ({g['delta']} т/сут)" for g in worst),
+            "severity": "critical" if total_loss > 100 and net < 0 else "warn",
+            "title": title,
+            "detail": (f"Снижение в {len(falling)} ГЗУ на {total_loss} т/сут, "
+                       f"рост в {len(rising)} ГЗУ на {total_gain} т/сут. "
+                       "Наибольшее падение: " + ", ".join(
+                           f"{g['name']} ({g['delta']} т/сут)" for g in worst)),
             "actions": [f"Открыть {g['name']} и разобрать скважины с падением"
                         for g in worst],
         })
@@ -68,8 +79,8 @@ def advise_fleet(gzu_rows: list[dict], window_h: int) -> list[dict]:
         recs.append({
             "severity": "info",
             "title": f"Без пары замеров за окно: {len(no_data)} ГЗУ",
-            "detail": "Для этих групп нет двух замеров с интервалом "
-                      f"{window_h} ч — динамика не вычисляется.",
+            "detail": "Для этих групп нет свежего замера и замера "
+                      f"примерно {window_h} ч назад — динамика не вычисляется.",
             "actions": ["Проверить периодичность опроса терминалов в админке"],
         })
     if not recs:
@@ -167,24 +178,28 @@ def advise_well(row: dict, forecast: dict, window_h: int) -> list[dict]:
                         "Проверить обводнённость и линейное давление"],
         })
     slope = forecast.get("slope_per_h")
+    level = forecast.get("level")
     projected = forecast.get("projected")
-    if slope is not None and slope < 0 and row["q_now"]:
-        hours_to_zero = row["q_now"] / -slope if slope else None
+    # прогнозные правила — только при статистически значимом спаде
+    if forecast.get("significant") and slope < 0 and level:
+        hours_to_zero = level / -slope
         if projected == 0:
             recs.append({
                 "severity": "critical",
                 "title": f"Прогноз: остановка в ближайшие {window_h} ч",
-                "detail": f"Тренд {slope:+.2f} т/сут·ч — при сохранении динамики "
-                          "дебит обнулится.",
+                "detail": f"Тренд {slope:+.2f} т/сут·ч по "
+                          f"{forecast['fit_points']} замерам — при сохранении "
+                          "динамики дебит обнулится.",
                 "actions": ["Немедленно проверить насос и подачу",
                             "Предупредить цех о вероятной остановке"],
             })
-        elif hours_to_zero and hours_to_zero < 72:
+        elif hours_to_zero < 72:
             recs.append({
                 "severity": "warn",
                 "title": f"Нисходящий тренд: ~{hours_to_zero:.0f} ч до нуля",
                 "detail": f"Прогноз через {window_h} ч: {projected} т/сут "
-                          f"(тренд {slope:+.2f} т/сут·ч).",
+                          f"(тренд {slope:+.2f} т/сут·ч по "
+                          f"{forecast['fit_points']} замерам).",
                 "actions": ["Поставить скважину на контроль",
                             "Проверить динамику соседних скважин ГЗУ"],
             })
